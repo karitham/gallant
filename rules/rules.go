@@ -1,26 +1,22 @@
 // Package rules reads and parses gallant lint rules.
 //
 // A rule is a markdown file whose optional frontmatter carries configuration
-// and whose body is the lint text. Rules live in a directory (by default
-// ./agents/gallant, relative to the current working directory) and declare the
-// files they apply to through the "appliesTo" glob field.
+// and whose body is the lint text. Rules are loaded from an fs.FS supplied by
+// the caller and declare the files they apply to through the "appliesTo" glob
+// field.
 package rules
 
 import (
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 )
 
-// DefaultDir is the directory, relative to the current working directory, from
-// which gallant reads lint rules.
-const DefaultDir = "agents/gallant"
-
 // Rule is a single lint rule loaded from a markdown file.
 type Rule struct {
-	// Path is empty for rules produced by Parse, which are not backed by a file.
+	// Path is the rule's path within the filesystem it was loaded from. It is
+	// empty for rules produced by Parse.
 	Path string
 	// AppliesTo is nil when the rule declares no patterns.
 	AppliesTo []string
@@ -48,30 +44,31 @@ func Parse(data []byte) (Rule, error) {
 	return rule, nil
 }
 
-func ParseFile(path string) (Rule, error) {
-	data, err := os.ReadFile(path)
+// ParseFile parses the rule at name within fsys.
+func ParseFile(fsys fs.FS, name string) (Rule, error) {
+	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return Rule{}, err
 	}
 
 	rule, err := Parse(data)
 	if err != nil {
-		return Rule{}, fmt.Errorf("%s: %w", path, err)
+		return Rule{}, fmt.Errorf("%s: %w", name, err)
 	}
-	rule.Path = path
+	rule.Path = name
 	return rule, nil
 }
 
-// Load reads every markdown rule under dir, including subdirectories. Rules are
+// Load reads every markdown rule from fsys, including subdirectories. Rules are
 // returned in lexical path order. Hidden files and directories (those whose name
 // begins with ".") are ignored.
-func Load(dir string) ([]Rule, error) {
+func Load(fsys fs.FS) ([]Rule, error) {
 	var rules []Rule
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if path != dir && strings.HasPrefix(d.Name(), ".") {
+		if p != "." && strings.HasPrefix(d.Name(), ".") {
 			if d.IsDir() {
 				return fs.SkipDir
 			}
@@ -81,7 +78,7 @@ func Load(dir string) ([]Rule, error) {
 			return nil
 		}
 
-		rule, err := ParseFile(path)
+		rule, err := ParseFile(fsys, p)
 		if err != nil {
 			return err
 		}
@@ -94,14 +91,8 @@ func Load(dir string) ([]Rule, error) {
 	return rules, nil
 }
 
-// LoadDefault reads every markdown rule under DefaultDir (./agents/gallant,
-// relative to the current working directory).
-func LoadDefault() ([]Rule, error) {
-	return Load(DefaultDir)
-}
-
 func isMarkdown(name string) bool {
-	switch strings.ToLower(filepath.Ext(name)) {
+	switch strings.ToLower(path.Ext(name)) {
 	case ".md", ".markdown":
 		return true
 	default:

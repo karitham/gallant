@@ -118,7 +118,7 @@ func TestLoad(t *testing.T) {
 	writeRule(t, dir, "notes.txt", "not a rule\n")
 	writeRule(t, dir, ".hidden/c.md", "---\nappliesTo: \"*.py\"\n---\nhidden\n")
 
-	rules, err := Load(dir)
+	rules, err := Load(os.DirFS(dir))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -126,7 +126,7 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("Load() returned %d rules, want 2", len(rules))
 	}
 
-	if got, want := rules[0].Path, filepath.Join(dir, "a.md"); got != want {
+	if got, want := rules[0].Path, "a.md"; got != want {
 		t.Errorf("rules[0].Path = %q, want %q", got, want)
 	}
 	if !reflect.DeepEqual(rules[0].AppliesTo, []string{"*.go"}) {
@@ -136,7 +136,7 @@ func TestLoad(t *testing.T) {
 		t.Errorf("rules[0].Body = %q, want %q", rules[0].Body, "first\n")
 	}
 
-	if got, want := filepath.ToSlash(rules[1].Path), filepath.ToSlash(filepath.Join(dir, "nested", "b.markdown")); got != want {
+	if got, want := rules[1].Path, "nested/b.markdown"; got != want {
 		t.Errorf("rules[1].Path = %q, want %q", got, want)
 	}
 	if !reflect.DeepEqual(rules[1].AppliesTo, []string{"*.ts"}) {
@@ -145,7 +145,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoadMissingDir(t *testing.T) {
-	if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
+	if _, err := Load(os.DirFS(filepath.Join(t.TempDir(), "does-not-exist"))); err == nil {
 		t.Fatal("Load() error = nil, want error for missing directory")
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,11 +16,11 @@ var update = flag.Bool("update", false, "update golden files")
 func TestLoadGolden(t *testing.T) {
 	const fixture = "testdata/rules"
 
-	rules, err := Load(fixture)
+	rules, err := Load(os.DirFS(fixture))
 	if err != nil {
 		t.Fatalf("Load(%q) error = %v", fixture, err)
 	}
-	golden(t, "rules", renderRules(fixture, rules))
+	golden(t, "rules", renderRules(rules))
 }
 
 // golden compares got against testdata/<name>.golden, writing the file instead
@@ -29,7 +28,7 @@ func TestLoadGolden(t *testing.T) {
 func golden(t *testing.T, name, got string) {
 	t.Helper()
 
-	path := filepath.Join("testdata", name+".golden")
+	path := "testdata/" + name + ".golden"
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 			t.Fatalf("write golden %s: %v", path, err)
@@ -46,16 +45,15 @@ func golden(t *testing.T, name, got string) {
 	}
 }
 
-// renderRules dumps rules in a stable, machine-independent form: paths are made
-// relative to the fixture directory and every field is quoted.
-func renderRules(fixture string, rules []Rule) string {
+// renderRules dumps rules in a stable form, quoting every field so that
+// whitespace and globs are unambiguous.
+func renderRules(rules []Rule) string {
 	var b strings.Builder
 	for i, r := range rules {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		path := strings.TrimPrefix(filepath.ToSlash(r.Path), filepath.ToSlash(fixture)+"/")
-		fmt.Fprintf(&b, "path: %s\n", path)
+		fmt.Fprintf(&b, "path: %s\n", r.Path)
 		fmt.Fprintf(&b, "appliesTo: %s\n", formatGlobs(r.AppliesTo))
 		fmt.Fprintf(&b, "body: %s\n", strconv.Quote(r.Body))
 	}
