@@ -1,0 +1,10 @@
+# Compiled binaries (go build ./cmd/gallant)
+/cmd/gallant/gallant
+/gallant
+
+# Test artifacts
+*.test
+coverage.out
+
+# macOS
+.DS_Store
