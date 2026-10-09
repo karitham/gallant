@@ -1,0 +1,23 @@
+path: body-dashes.md
+appliesTo: ["docs/**"]
+body: "\n# Title\n\n---\n\nMore text.\n"
+
+path: go-style.md
+appliesTo: ["**/*.go"]
+body: "# Go style\n\nPrefer early returns.\n"
+
+path: inline.md
+appliesTo: ["*.sql", "migrations/**"]
+body: "Use transactions.\n"
+
+path: nested/typescript.md
+appliesTo: ["**/*.ts", "**/*.tsx"]
+body: "Keep types explicit.\n"
+
+path: no-frontmatter.md
+appliesTo: []
+body: "Always write tests.\n"
+
+path: windows.md
+appliesTo: ["*.rb"]
+body: "Use frozen string literals.\r\n"
