@@ -1,4 +1,4 @@
 ---
-appliesTo: "**/*.rs"
+appliesTo: "*.rs"
 ---
 Hidden directories are ignored.

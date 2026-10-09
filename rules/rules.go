@@ -2,8 +2,8 @@
 //
 // A rule is a markdown file whose optional frontmatter carries configuration
 // and whose body is the lint text. Rules are loaded from an fs.FS supplied by
-// the caller and declare the files they apply to through the "appliesTo" glob
-// field.
+// the caller and declare which file names they apply to through the "appliesTo"
+// glob field, matched against file names rather than paths.
 package rules
 
 import (

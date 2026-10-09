@@ -1,4 +1,4 @@
 ---
-appliesTo: ["*.sql", "migrations/**"]
+appliesTo: ["*.sql", "*.ddl"]
 ---
 Use transactions.

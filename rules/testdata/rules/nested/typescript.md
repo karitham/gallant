@@ -1,6 +1,6 @@
 ---
 appliesTo:
-  - "**/*.ts"
-  - "**/*.tsx"
+  - "*.ts"
+  - "*.tsx"
 ---
 Keep types explicit.

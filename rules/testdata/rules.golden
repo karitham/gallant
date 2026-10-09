@@ -1,17 +1,17 @@
 path: body-dashes.md
-appliesTo: ["docs/**"]
+appliesTo: ["*.md"]
 body: "\n# Title\n\n---\n\nMore text.\n"
 
 path: go-style.md
-appliesTo: ["**/*.go"]
+appliesTo: ["*.go"]
 body: "# Go style\n\nPrefer early returns.\n"
 
 path: inline.md
-appliesTo: ["*.sql", "migrations/**"]
+appliesTo: ["*.sql", "*.ddl"]
 body: "Use transactions.\n"
 
 path: nested/typescript.md
-appliesTo: ["**/*.ts", "**/*.tsx"]
+appliesTo: ["*.ts", "*.tsx"]
 body: "Keep types explicit.\n"
 
 path: no-frontmatter.md

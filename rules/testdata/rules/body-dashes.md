@@ -1,5 +1,5 @@
 ---
-appliesTo: "docs/**"
+appliesTo: "*.md"
 ---
 
 # Title
