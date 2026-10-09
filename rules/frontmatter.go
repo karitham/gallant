@@ -9,10 +9,6 @@ import (
 
 const frontmatterDelimiter = "---"
 
-type config struct {
-	AppliesTo globList `yaml:"appliesTo"`
-}
-
 // globList accepts either a single glob string or a list of them.
 type globList []string
 
@@ -37,14 +33,6 @@ func (g *globList) UnmarshalYAML(value *yaml.Node) error {
 	default:
 		return fmt.Errorf("appliesTo: expected a string or a list of strings")
 	}
-}
-
-func parseConfig(fm string) (config, error) {
-	var cfg config
-	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
-		return config{}, err
-	}
-	return cfg, nil
 }
 
 // splitFrontmatter separates an optional frontmatter block from the markdown

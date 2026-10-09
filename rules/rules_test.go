@@ -111,6 +111,27 @@ func TestParseInvalidFrontmatter(t *testing.T) {
 	}
 }
 
+func TestRuleApplies(t *testing.T) {
+	rule := Rule{AppliesTo: []string{"*.go", "*.ts"}}
+	tests := map[string]bool{
+		"main.go":     true,
+		"a.ts":        true,
+		"a.py":        false,
+		"main.go.bak": false,
+	}
+	for name, want := range tests {
+		if got := rule.Applies(name); got != want {
+			t.Errorf("Applies(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestRuleAppliesNoGlobs(t *testing.T) {
+	if (Rule{}).Applies("main.go") {
+		t.Error("Applies() = true for a rule with no globs, want false")
+	}
+}
+
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	writeRule(t, dir, "a.md", "---\nappliesTo: \"*.go\"\n---\nfirst\n")

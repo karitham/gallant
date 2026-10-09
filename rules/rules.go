@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"path"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Rule is a single lint rule loaded from a markdown file.
@@ -36,11 +38,13 @@ func Parse(data []byte) (Rule, error) {
 		return rule, nil
 	}
 
-	cfg, err := parseConfig(fm)
-	if err != nil {
+	var cfg struct {
+		AppliesTo globList `yaml:"appliesTo"`
+	}
+	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
 		return Rule{}, err
 	}
-	rule.AppliesTo = []string(cfg.AppliesTo)
+	rule.AppliesTo = cfg.AppliesTo
 	return rule, nil
 }
 
@@ -59,6 +63,17 @@ func ParseFile(fsys fs.FS, name string) (Rule, error) {
 	return rule, nil
 }
 
+// Applies reports whether any of the rule's globs match name. Malformed globs
+// never match.
+func (r Rule) Applies(name string) bool {
+	for _, glob := range r.AppliesTo {
+		if ok, err := path.Match(glob, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Load reads every markdown rule from fsys, including subdirectories. Rules are
 // returned in lexical path order. Hidden files and directories (those whose name
 // begins with ".") are ignored.
@@ -74,7 +89,11 @@ func Load(fsys fs.FS) ([]Rule, error) {
 			}
 			return nil
 		}
-		if d.IsDir() || !isMarkdown(d.Name()) {
+		if d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(path.Ext(d.Name()))
+		if ext != ".md" && ext != ".markdown" {
 			return nil
 		}
 
@@ -89,13 +108,4 @@ func Load(fsys fs.FS) ([]Rule, error) {
 		return nil, err
 	}
 	return rules, nil
-}
-
-func isMarkdown(name string) bool {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".md", ".markdown":
-		return true
-	default:
-		return false
-	}
 }

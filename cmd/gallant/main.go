@@ -2,9 +2,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/madxmike/gallant/rules"
 )
@@ -14,32 +16,78 @@ import (
 const defaultRulesDir = "agents/gallant"
 
 func main() {
-	fsys, err := mountRules(defaultRulesDir)
-	if err != nil {
-		fail(err)
+	flag.Parse()
+
+	if _, err := os.Stat(defaultRulesDir); err != nil {
+		fmt.Fprintln(os.Stderr, "gallant:", err)
+		os.Exit(1)
 	}
-	if err := run(fsys, os.Args[1:]); err != nil {
-		fail(err)
+	if err := run(os.DirFS(defaultRulesDir), flag.Args()); err != nil {
+		fmt.Fprintln(os.Stderr, "gallant:", err)
+		os.Exit(1)
 	}
 }
 
-func mountRules(dir string) (fs.FS, error) {
-	if _, err := os.Stat(dir); err != nil {
-		return nil, err
-	}
-	return os.DirFS(dir), nil
-}
-
-func run(fsys fs.FS, args []string) error {
-	loaded, err := rules.Load(fsys)
+func run(rulesFS fs.FS, paths []string) error {
+	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("loaded %d rules\n", len(loaded))
+
+	if len(paths) == 0 {
+		// No operands reads standard input, as gofmt does.
+		fmt.Println("<standard input>")
+		return nil
+	}
+
+	files, err := resolveInputs(paths, func(name string) bool {
+		for _, r := range loaded {
+			if r.Applies(name) {
+				return true
+			}
+		}
+		return false
+	})
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		fmt.Println(f.Name())
+		f.Close()
+	}
 	return nil
 }
 
-func fail(err error) {
-	fmt.Fprintln(os.Stderr, "gallant:", err)
-	os.Exit(1)
+// resolveInputs expands path operands into open files, mirroring gofmt's
+// operand handling. An explicit file operand is always included; a directory
+// operand is walked and each file within it is included only when match reports
+// true for its name.
+func resolveInputs(paths []string, match func(name string) bool) ([]*os.File, error) {
+	var files []*os.File
+	for _, p := range paths {
+		err := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if path != p && match != nil && !match(d.Name()) {
+				return nil
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			files = append(files, f)
+			return nil
+		})
+		if err != nil {
+			for _, f := range files {
+				f.Close()
+			}
+			return nil, err
+		}
+	}
+	return files, nil
 }
