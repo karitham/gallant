@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  # Release on every push to main, and whenever a semver tag is pushed.
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  # Or generate the next semver tag manually from the Actions tab.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which semver component to bump
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+# Needed by GoReleaser to create the GitHub release.
+permissions:
+  contents: write
+
+# Serialize release runs so concurrent pushes to main can't race on tag creation.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history so GoReleaser can compute the changelog and find tags.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      # Compute and tag only when we need to mint a new version: a push to a
+      # branch (main), or a manual dispatch. A tag push is already versioned.
+      - name: Compute next version
+        if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/') }}
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          bump="${BUMP:-patch}"
+
+          latest="$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)"
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+
+          raw="${latest#v}"
+          raw="${raw%%-*}" # ignore pre-release/build metadata when bumping
+          IFS='.' read -r major minor patch <<< "$raw"
+
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          next="v${major}.${minor}.${patch}"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Releasing $next (previous: $latest, bump: $bump)"
+
+      - name: Create and push tag
+        if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "$NEXT"
+          git push origin "$NEXT"
+          # Check out the new tag so GoReleaser picks it up as the version.
+          git checkout "$NEXT"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
