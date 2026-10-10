@@ -49,12 +49,6 @@ func run(rulesFS fs.FS, paths []string, model eval.Model) error {
 		return err
 	}
 
-	if len(paths) == 0 {
-		// No operands reads standard input, as gofmt does.
-		fmt.Println("<standard input>")
-		return nil
-	}
-
 	files, err := resolveInputs(paths, func(name string) bool {
 		for _, r := range loaded {
 			if r.Applies(name) {
