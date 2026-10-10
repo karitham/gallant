@@ -98,6 +98,46 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseChoice(t *testing.T) {
+	src := "---\ntype: choice\ncriteria:\n  a: \"one\"\n  b: \"two\"\n---\nbody\n"
+	rule, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if rule.Type != TypeChoice {
+		t.Errorf("Type = %q, want %q", rule.Type, TypeChoice)
+	}
+	want := map[string]string{"a": "one", "b": "two"}
+	if !reflect.DeepEqual(rule.Criteria.Options, want) {
+		t.Errorf("Criteria.Options = %#v, want %#v", rule.Criteria.Options, want)
+	}
+}
+
+func TestParseScore(t *testing.T) {
+	src := "---\ntype: score\ncriteria:\n  - \"low\"\n  - \"high\"\n---\nbody\n"
+	rule, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if rule.Type != TypeScore {
+		t.Errorf("Type = %q, want %q", rule.Type, TypeScore)
+	}
+	want := []string{"low", "high"}
+	if !reflect.DeepEqual(rule.Criteria.Levels, want) {
+		t.Errorf("Criteria.Levels = %#v, want %#v", rule.Criteria.Levels, want)
+	}
+}
+
+func TestParserDefaultsToNoul(t *testing.T) {
+	rule, err := Parse([]byte("---\nappliesTo: \"*.go\"\n---\nbody\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if rule.Type != TypeNoul {
+		t.Errorf("Type = %q, want %q", rule.Type, TypeNoul)
+	}
+}
+
 func TestParseInvalidFrontmatter(t *testing.T) {
 	tests := map[string]string{
 		"not a mapping": "---\nnot a key value line\n---\nbody\n",

@@ -15,6 +15,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Decision types a rule can declare through its "type" frontmatter field.
+const (
+	TypeNoul   = "noul"
+	TypeChoice = "choice"
+	TypeScore  = "score"
+)
+
 // Rule is a single lint rule loaded from a markdown file.
 type Rule struct {
 	// Path is the rule's path within the filesystem it was loaded from. It is
@@ -22,6 +29,11 @@ type Rule struct {
 	Path string
 	// AppliesTo is nil when the rule declares no patterns.
 	AppliesTo []string
+	// Type is the decision the model makes: TypeNoul, TypeChoice, or TypeScore.
+	Type string
+	// Criteria is the options (choice) or levels (score) the decision is made
+	// from.
+	Criteria Criteria
 	// Body is everything following the frontmatter, preserved verbatim.
 	Body string
 }
@@ -33,18 +45,24 @@ type Rule struct {
 // including any leading or trailing blank lines.
 func Parse(data []byte) (Rule, error) {
 	fm, body, ok := splitFrontmatter(string(data))
-	rule := Rule{Body: body}
+	rule := Rule{Type: TypeNoul, Body: body}
 	if !ok {
 		return rule, nil
 	}
 
 	var cfg struct {
 		AppliesTo globList `yaml:"appliesTo"`
+		Type      string   `yaml:"type"`
+		Criteria  Criteria `yaml:"criteria"`
 	}
 	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
 		return Rule{}, err
 	}
 	rule.AppliesTo = cfg.AppliesTo
+	rule.Criteria = cfg.Criteria
+	if cfg.Type != "" {
+		rule.Type = cfg.Type
+	}
 	return rule, nil
 }
 

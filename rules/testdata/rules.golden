@@ -1,23 +1,47 @@
 path: body-dashes.md
 appliesTo: ["*.md"]
+type: noul
+criteria: []
 body: "\n# Title\n\n---\n\nMore text.\n"
 
 path: go-style.md
 appliesTo: ["*.go"]
+type: noul
+criteria: []
 body: "# Go style\n\nPrefer early returns.\n"
 
 path: inline.md
 appliesTo: ["*.sql", "*.ddl"]
+type: noul
+criteria: []
 body: "Use transactions.\n"
 
 path: nested/typescript.md
 appliesTo: ["*.ts", "*.tsx"]
+type: noul
+criteria: []
 body: "Keep types explicit.\n"
 
 path: no-frontmatter.md
 appliesTo: []
+type: noul
+criteria: []
 body: "Always write tests.\n"
+
+path: readability.md
+appliesTo: ["*.md"]
+type: score
+criteria: ["Easy to read", "Somewhat hard", "Very hard"]
+body: "Rate how hard the document is to read.\n"
+
+path: severity.md
+appliesTo: ["*.md"]
+type: choice
+criteria: {compliant: "The document follows the rule.", violation: "The document breaks the rule."}
+body: "Judge how the document relates to the rule.\n"
 
 path: windows.md
 appliesTo: ["*.rb"]
+type: noul
+criteria: []
 body: "Use frozen string literals.\r\n"

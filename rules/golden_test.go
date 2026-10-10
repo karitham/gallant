@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -55,6 +56,8 @@ func renderRules(rules []Rule) string {
 		}
 		fmt.Fprintf(&b, "path: %s\n", r.Path)
 		fmt.Fprintf(&b, "appliesTo: %s\n", formatGlobs(r.AppliesTo))
+		fmt.Fprintf(&b, "type: %s\n", r.Type)
+		fmt.Fprintf(&b, "criteria: %s\n", formatCriteria(r.Criteria))
 		fmt.Fprintf(&b, "body: %s\n", strconv.Quote(r.Body))
 	}
 	return b.String()
@@ -66,4 +69,24 @@ func formatGlobs(globs []string) string {
 		quoted[i] = strconv.Quote(g)
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+func formatCriteria(c Criteria) string {
+	if c.Options != nil {
+		keys := make([]string, 0, len(c.Options))
+		for k := range c.Options {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = fmt.Sprintf("%s: %s", k, strconv.Quote(c.Options[k]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	}
+	parts := make([]string, len(c.Levels))
+	for i, l := range c.Levels {
+		parts[i] = strconv.Quote(l)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }

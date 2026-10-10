@@ -35,6 +35,25 @@ func (g *globList) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
+// Criteria is the set of options or levels a rule's question is answered from:
+// a mapping of option to description for a choice, or an ordered list of levels
+// for a score.
+type Criteria struct {
+	Options map[string]string
+	Levels  []string
+}
+
+func (c *Criteria) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.MappingNode:
+		return value.Decode(&c.Options)
+	case yaml.SequenceNode:
+		return value.Decode(&c.Levels)
+	default:
+		return fmt.Errorf("criteria must be a mapping or a list")
+	}
+}
+
 // splitFrontmatter separates an optional frontmatter block from the markdown
 // body. The boolean result reports whether a frontmatter block was found.
 //
