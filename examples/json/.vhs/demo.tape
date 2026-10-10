@@ -17,7 +17,9 @@ Show
 
 Type "gallant --provider opencode --model jev-1.13-free --json --rules examples/json/rules examples/json/sample.go"
 Enter
+# Let the model answer, then hold on the findings before the GIF ends.
 Sleep 3s
+Sleep 5s
 
 Hide
 Type "rm gallant"

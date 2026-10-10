@@ -17,7 +17,9 @@ Show
 
 Type "cat examples/stdin/message.txt | gallant --provider opencode --model jev-1.13-free --rules examples/stdin/rules --assume-filename commit.msg"
 Enter
+# Let the model answer, then hold on the findings before the GIF ends.
 Sleep 3s
+Sleep 5s
 
 Hide
 Type "rm gallant"
