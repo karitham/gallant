@@ -2,12 +2,14 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/madxmike/gallant/eval"
@@ -24,6 +26,7 @@ func main() {
 	model := flag.String("model", "", "model name")
 	rulesDir := flag.String("rules", defaultRulesDir, "directory of lint rules, relative to the current working directory")
 	includePassing := flag.Bool("include-passing", false, "also show rules the file passes")
+	asJSON := flag.Bool("json", false, "emit findings as JSON")
 	flag.Parse()
 
 	p, ok := eval.Lookup(*provider)
@@ -40,12 +43,12 @@ func main() {
 	if _, err := os.Stat(*rulesDir); err != nil {
 		fail(err)
 	}
-	if err := run(os.DirFS(*rulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model), *includePassing); err != nil {
+	if err := run(os.DirFS(*rulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model), *includePassing, *asJSON); err != nil {
 		fail(err)
 	}
 }
 
-func run(rulesFS fs.FS, paths []string, model eval.Model, includePassing bool) error {
+func run(rulesFS fs.FS, paths []string, model eval.Model, includePassing, asJSON bool) error {
 	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
@@ -68,35 +71,62 @@ func run(rulesFS fs.FS, paths []string, model eval.Model, includePassing bool) e
 		}
 	}()
 
+	records := []record{}
 	for _, f := range files {
 		findings, err := eval.File(f, loaded, model)
 		if err != nil {
 			return err
 		}
-		printed := false
 		for _, finding := range findings {
-			var line string
-			switch finding.Type {
-			case rules.TypeChoice, rules.TypeScore:
-				line = fmt.Sprintf(" - %s: %s (%.0f%% confidence)", finding.Rule, finding.Result, finding.Confidence*100)
-			default:
+			result, confidence := finding.Result, finding.Confidence
+			if finding.Type == rules.TypeNoul {
 				if finding.Confidence <= 0.5 {
 					if !includePassing {
 						continue
 					}
-					line = fmt.Sprintf(" + %s (%.0f%% confidence)", finding.Rule, (1-finding.Confidence)*100)
+					result, confidence = "pass", 1-finding.Confidence
 				} else {
-					line = fmt.Sprintf(" - %s (%.0f%% confidence)", finding.Rule, finding.Confidence*100)
+					result, confidence = "fail", finding.Confidence
 				}
 			}
-			if !printed {
-				fmt.Println(f.Name())
-				printed = true
-			}
-			fmt.Println(line)
+			records = append(records, record{
+				File:       f.Name(),
+				Rule:       finding.Rule,
+				Type:       string(finding.Type),
+				Result:     result,
+				Confidence: confidence,
+			})
 		}
 	}
+
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(records)
+	}
+	for _, r := range records {
+		fmt.Printf("%s %s %s %.0f%% %s\n", escape(r.File), escape(r.Rule), r.Type, r.Confidence*100, escape(r.Result))
+	}
 	return nil
+}
+
+// record is one finding as it is emitted. Confidence is the confidence in
+// Result: for a noul it is the probability of the reported pass or fail, and for
+// a choice or score it is the model's confidence in the chosen option or level.
+type record struct {
+	File       string  `json:"file"`
+	Rule       string  `json:"rule"`
+	Type       string  `json:"type"`
+	Result     string  `json:"result"`
+	Confidence float64 `json:"confidence"`
+}
+
+// escape makes s safe to print on one line. It renders s as a quoted Go string
+// with the surrounding quotes removed, so backslashes, newlines, tabs, and other
+// control characters are escaped and the field never spans a line.
+func escape(s string) string {
+	quoted := strconv.Quote(s)
+	return quoted[1 : len(quoted)-1]
 }
 
 // resolveInputs expands path operands into open files, mirroring gofmt's

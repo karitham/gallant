@@ -83,6 +83,25 @@ func TestResolveInputsMissingPath(t *testing.T) {
 	}
 }
 
+func TestEscape(t *testing.T) {
+	tests := map[string]string{
+		"plain":               "plain",
+		"spaces are kept":     "spaces are kept",
+		"line\nbreak":         `line\nbreak`,
+		"carriage\rreturn":    `carriage\rreturn`,
+		"tab\tseparator":      `tab\tseparator`,
+		`back\slash`:          `back\\slash`,
+		`quote"inside`:        `quote\"inside`,
+		"escape\x1bseq":       `escape\x1bseq`,
+		"all\t\n\r\\ at once": `all\t\n\r\\ at once`,
+	}
+	for in, want := range tests {
+		if got := escape(in); got != want {
+			t.Errorf("escape(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func write(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, name)

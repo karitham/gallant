@@ -44,6 +44,22 @@ Run it from the root of a project:
 gallant
 ```
 
+## Output
+
+Findings print one per line in a fixed, space-separated form:
+
+    <file> <rule> <type> <confidence> <result>
+
+Backslashes, newlines, and other control characters within a field are escaped,
+so every finding stays on a single line and no field contains a tab. The result
+is the last field and may contain spaces.
+
+For machine consumption, `--json` emits an array of objects instead:
+
+```sh
+gallant --json
+```
+
 ## Status
 
 Gallant is under active development.
