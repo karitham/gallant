@@ -68,26 +68,32 @@ func run(rulesFS fs.FS, paths []string, model eval.Model, includePassing bool) e
 		}
 	}()
 
-	printed := false
 	for _, f := range files {
 		findings, err := eval.File(f, loaded, model)
 		if err != nil {
 			return err
 		}
+		printed := false
 		for _, finding := range findings {
-			passing := finding.Confidence <= 0.5
-			if passing && !includePassing {
-				continue
+			var line string
+			switch finding.Type {
+			case rules.TypeChoice, rules.TypeScore:
+				line = fmt.Sprintf(" - %s: %s (%.0f%% confidence)", finding.Rule, finding.Result, finding.Confidence*100)
+			default:
+				if finding.Confidence <= 0.5 {
+					if !includePassing {
+						continue
+					}
+					line = fmt.Sprintf(" + %s (%.0f%% confidence)", finding.Rule, (1-finding.Confidence)*100)
+				} else {
+					line = fmt.Sprintf(" - %s (%.0f%% confidence)", finding.Rule, finding.Confidence*100)
+				}
 			}
 			if !printed {
 				fmt.Println(f.Name())
 				printed = true
 			}
-			if passing {
-				fmt.Printf(" + %s (%.0f%% confidence)\n", finding.Rule, (1-finding.Confidence)*100)
-			} else {
-				fmt.Printf(" - %s (%.0f%% confidence)\n", finding.Rule, finding.Confidence*100)
-			}
+			fmt.Println(line)
 		}
 	}
 	return nil

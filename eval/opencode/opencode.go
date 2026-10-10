@@ -55,10 +55,18 @@ func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error
 
 	questions := make(map[string]question, len(rs))
 	for _, r := range rs {
-		questions[r.Path] = question{
-			Type:         "noul",
-			Instructions: "Does this file violate the following rule?\n\n" + r.Body,
+		instructions := r.Body
+		if r.Type == rules.TypeNoul {
+			instructions = "Does this file violate the following rule?\n\n" + r.Body
 		}
+		var criteria any
+		switch {
+		case r.Criteria.Options != nil:
+			criteria = r.Criteria.Options
+		case r.Criteria.Levels != nil:
+			criteria = r.Criteria.Levels
+		}
+		questions[r.Path] = question{Type: r.Type, Instructions: instructions, Criteria: criteria}
 	}
 
 	body, err := json.Marshal(request{
@@ -94,9 +102,26 @@ func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error
 
 	var findings []eval.Finding
 	for _, r := range rs {
-		if a, ok := res.Answers[r.Path]; ok {
-			findings = append(findings, eval.Finding{Rule: r.Path, Confidence: a.Noul})
+		a, ok := res.Answers[r.Path]
+		if !ok {
+			continue
 		}
+		f := eval.Finding{Rule: r.Path, Type: r.Type}
+		switch r.Type {
+		case rules.TypeChoice:
+			f.Result = a.Choice
+			f.Confidence = a.Confidence
+		case rules.TypeScore:
+			f.Confidence = a.Confidence
+			if i := int(a.Score); i >= 0 && i < len(r.Criteria.Levels) {
+				f.Result = r.Criteria.Levels[i]
+			} else {
+				f.Result = fmt.Sprintf("%g", a.Score)
+			}
+		default:
+			f.Confidence = a.Noul
+		}
+		findings = append(findings, f)
 	}
 	return findings, nil
 }
@@ -110,6 +135,7 @@ type request struct {
 type question struct {
 	Type         string `json:"type"`
 	Instructions string `json:"instructions"`
+	Criteria     any    `json:"criteria,omitempty"`
 }
 
 type response struct {
@@ -117,10 +143,13 @@ type response struct {
 }
 
 // answer is the response for one question. Noul is the probability that the
-// question is true, i.e. that the file violates the rule.
+// question is true; Choice is the chosen option; Score is the chosen level.
 type answer struct {
-	Type string  `json:"type"`
-	Noul float64 `json:"noul"`
+	Type       string  `json:"type"`
+	Noul       float64 `json:"noul"`
+	Choice     string  `json:"choice"`
+	Score      float64 `json:"score"`
+	Confidence float64 `json:"confidence"`
 }
 
 func init() {

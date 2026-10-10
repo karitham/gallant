@@ -8,11 +8,14 @@ import (
 	"github.com/madxmike/gallant/rules"
 )
 
-// Finding is one rule's result for a file. Confidence is the model's
-// probability that the rule is violated, from 0 to 1.
+// Finding is one rule's result for a file. For a noul, Confidence is the
+// probability the rule is violated; for a choice or score, Result is the chosen
+// option or level and Confidence is the model's confidence in it.
 type Finding struct {
 	Rule       string
+	Type       string
 	Confidence float64
+	Result     string
 }
 
 // Model evaluates a file against the rules that apply to it, returning its

@@ -64,13 +64,16 @@ func TestEvaluate(t *testing.T) {
 	c := &Client{key: "secret", model: Jev113Free, url: srv.URL, http: srv.Client()}
 
 	findings, err := c.Evaluate(file, []rules.Rule{
-		{Path: "a.md", Body: "rule A"},
-		{Path: "b.md", Body: "rule B"},
+		{Path: "a.md", Type: rules.TypeNoul, Body: "rule A"},
+		{Path: "b.md", Type: rules.TypeNoul, Body: "rule B"},
 	})
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
-	want := []eval.Finding{{Rule: "a.md", Confidence: 0.9}, {Rule: "b.md", Confidence: 0.1}}
+	want := []eval.Finding{
+		{Rule: "a.md", Type: rules.TypeNoul, Confidence: 0.9},
+		{Rule: "b.md", Type: rules.TypeNoul, Confidence: 0.1},
+	}
 	if !reflect.DeepEqual(findings, want) {
 		t.Errorf("Evaluate() = %#v, want %#v", findings, want)
 	}
@@ -87,6 +90,40 @@ func TestEvaluate(t *testing.T) {
 	}
 	if len(capture.req.Questions) != 2 {
 		t.Errorf("questions = %d, want 2", len(capture.req.Questions))
+	}
+}
+
+func TestEvaluateOtherTypes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(response{
+			Answers: map[string]answer{
+				"s.md": {Type: "choice", Choice: "violation", Confidence: 0.82},
+				"r.md": {Type: "score", Score: 1, Confidence: 0.9},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	file, err := os.CreateTemp(t.TempDir(), "rule")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	c := &Client{model: Jev113Free, url: srv.URL, http: srv.Client()}
+	findings, err := c.Evaluate(file, []rules.Rule{
+		{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
+		{Path: "r.md", Type: rules.TypeScore, Criteria: rules.Criteria{Levels: []string{"low", "mid", "high"}}},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	want := []eval.Finding{
+		{Rule: "s.md", Type: rules.TypeChoice, Result: "violation", Confidence: 0.82},
+		{Rule: "r.md", Type: rules.TypeScore, Result: "mid", Confidence: 0.9},
+	}
+	if !reflect.DeepEqual(findings, want) {
+		t.Errorf("Evaluate() = %#v, want %#v", findings, want)
 	}
 }
 
