@@ -1,12 +1,12 @@
 package opencode
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/madxmike/gallant/eval"
@@ -51,19 +51,9 @@ func TestEvaluate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	path := filepath.Join(t.TempDir(), "main.go")
-	if err := os.WriteFile(path, []byte("package main"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-
 	c := &Client{key: "secret", model: Jev113Free, url: srv.URL, http: srv.Client()}
 
-	findings, err := c.Evaluate(file, []rules.Rule{
+	findings, err := c.Evaluate(context.Background(), strings.NewReader("package main"), []rules.Rule{
 		{Path: "a.md", Type: rules.TypeNoul, Body: "rule A"},
 		{Path: "b.md", Type: rules.TypeNoul, Body: "rule B"},
 	})
@@ -104,14 +94,8 @@ func TestEvaluateOtherTypes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	file, err := os.CreateTemp(t.TempDir(), "rule")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-
 	c := &Client{model: Jev113Free, url: srv.URL, http: srv.Client()}
-	findings, err := c.Evaluate(file, []rules.Rule{
+	findings, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{
 		{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
 		{Path: "r.md", Type: rules.TypeScore, Criteria: rules.Criteria{Levels: []string{"low", "mid", "high"}}},
 	})
@@ -133,14 +117,8 @@ func TestEvaluateHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	file, err := os.CreateTemp(t.TempDir(), "rule")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-
 	c := &Client{url: srv.URL, http: srv.Client()}
-	if _, err := c.Evaluate(file, []rules.Rule{{Path: "a.md", Body: "x"}}); err == nil {
+	if _, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}}); err == nil {
 		t.Fatal("Evaluate() error = nil, want an error for a non-200 response")
 	}
 }

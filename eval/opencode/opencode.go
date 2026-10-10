@@ -3,11 +3,11 @@ package opencode
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/madxmike/gallant/eval"
@@ -46,9 +46,9 @@ func New(key string, model Model) *Client {
 var _ eval.Model = (*Client)(nil)
 
 // Evaluate implements eval.Model by asking the model, once per rule, whether
-// the file violates it.
-func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error) {
-	state, err := io.ReadAll(file)
+// the input violates it.
+func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	state, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

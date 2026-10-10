@@ -44,6 +44,13 @@ Run it from the root of a project:
 gallant
 ```
 
+Files are evaluated in parallel, eight at a time by default. Change the number
+of concurrent evaluations with `--jobs`:
+
+```sh
+gallant --jobs 16
+```
+
 ## Output
 
 Findings print one per line in a fixed, space-separated form:
