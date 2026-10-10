@@ -19,23 +19,6 @@ To install a specific release, pin its version:
 go install github.com/madxmike/gallant/cmd/gallant@v0.1.0
 ```
 
-Prebuilt binaries for Linux, macOS, and Windows (amd64 and arm64) are attached
-to every [release](https://github.com/madxmike/gallant/releases). Download and
-unpack the archive for your platform:
-
-```sh
-VERSION=0.1.0
-OS=darwin   # linux, darwin, windows
-ARCH=arm64  # amd64, arm64
-curl -fsSL -o gallant.tar.gz \
-  "https://github.com/madxmike/gallant/releases/download/v${VERSION}/gallant_${VERSION}_${OS}_${ARCH}.tar.gz"
-tar -xzf gallant.tar.gz gallant
-sudo install gallant /usr/local/bin/
-```
-
-Windows archives use the `.zip` extension instead. Every release also ships a
-`checksums.txt` so downloads can be verified.
-
 ## Usage
 
 Gallant evaluates files with a decision model served by a provider. The default
@@ -102,10 +85,6 @@ Decision models as of writing (10/10/2026) have relatively small input context w
 If you are facing this you may chunk the file yourself into relevant, smaller, pieces. Gallant does not do this itself, but you can pass arbitrary input from stdin (See Usage above). 
 
 These models are only now becoming mainstream, but are seeing rapid development. The hope is that new models will allow bigger inputs soon enough (as we saw with LLMs). 
-
-## Status
-
-Gallant is under active development.
 
 ## Development
 
