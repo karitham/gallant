@@ -15,11 +15,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Type is a rule's decision type.
+type Type string
+
 // Decision types a rule can declare through its "type" frontmatter field.
 const (
-	TypeNoul   = "noul"
-	TypeChoice = "choice"
-	TypeScore  = "score"
+	TypeNoul   Type = "noul"
+	TypeChoice Type = "choice"
+	TypeScore  Type = "score"
 )
 
 // Rule is a single lint rule loaded from a markdown file.
@@ -30,7 +33,7 @@ type Rule struct {
 	// AppliesTo is nil when the rule declares no patterns.
 	AppliesTo []string
 	// Type is the decision the model makes: TypeNoul, TypeChoice, or TypeScore.
-	Type string
+	Type Type
 	// Criteria is the options (choice) or levels (score) the decision is made
 	// from.
 	Criteria Criteria
@@ -52,7 +55,7 @@ func Parse(data []byte) (Rule, error) {
 
 	var cfg struct {
 		AppliesTo globList `yaml:"appliesTo"`
-		Type      string   `yaml:"type"`
+		Type      Type     `yaml:"type"`
 		Criteria  Criteria `yaml:"criteria"`
 	}
 	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {

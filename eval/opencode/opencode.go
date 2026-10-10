@@ -66,7 +66,7 @@ func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error
 		case r.Criteria.Levels != nil:
 			criteria = r.Criteria.Levels
 		}
-		questions[r.Path] = question{Type: r.Type, Instructions: instructions, Criteria: criteria}
+		questions[r.Path] = question{Type: string(r.Type), Instructions: instructions, Criteria: criteria}
 	}
 
 	body, err := json.Marshal(request{

@@ -13,7 +13,7 @@ import (
 // option or level and Confidence is the model's confidence in it.
 type Finding struct {
 	Rule       string
-	Type       string
+	Type       rules.Type
 	Confidence float64
 	Result     string
 }
