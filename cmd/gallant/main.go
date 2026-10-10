@@ -7,7 +7,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
+	"github.com/madxmike/gallant/eval"
+	_ "github.com/madxmike/gallant/eval/opencode"
 	"github.com/madxmike/gallant/rules"
 )
 
@@ -16,19 +20,30 @@ import (
 const defaultRulesDir = "agents/gallant"
 
 func main() {
+	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
+	model := flag.String("model", "", "model name")
 	flag.Parse()
 
-	if _, err := os.Stat(defaultRulesDir); err != nil {
-		fmt.Fprintln(os.Stderr, "gallant:", err)
-		os.Exit(1)
+	p, ok := eval.Lookup(*provider)
+	if !ok {
+		fail(fmt.Errorf("unknown provider %q (want one of: %s)", *provider, strings.Join(eval.Names(), ", ")))
 	}
-	if err := run(os.DirFS(defaultRulesDir), flag.Args()); err != nil {
-		fmt.Fprintln(os.Stderr, "gallant:", err)
-		os.Exit(1)
+	if *model == "" {
+		*model = p.Default
+	}
+	if !slices.Contains(p.Models, *model) {
+		fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(p.Models, ", ")))
+	}
+
+	if _, err := os.Stat(defaultRulesDir); err != nil {
+		fail(err)
+	}
+	if err := run(os.DirFS(defaultRulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model)); err != nil {
+		fail(err)
 	}
 }
 
-func run(rulesFS fs.FS, paths []string) error {
+func run(rulesFS fs.FS, paths []string, model eval.Model) error {
 	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
@@ -51,9 +66,20 @@ func run(rulesFS fs.FS, paths []string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		for _, f := range files {
+			f.Close()
+		}
+	}()
+
 	for _, f := range files {
-		fmt.Println(f.Name())
-		f.Close()
+		findings, err := eval.File(f, loaded, model)
+		if err != nil {
+			return err
+		}
+		for _, finding := range findings {
+			fmt.Printf("%s: %s\n", f.Name(), finding)
+		}
 	}
 	return nil
 }
@@ -90,4 +116,9 @@ func resolveInputs(paths []string, match func(name string) bool) ([]*os.File, er
 		}
 	}
 	return files, nil
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, "gallant:", err)
+	os.Exit(1)
 }
