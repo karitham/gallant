@@ -38,17 +38,38 @@ Windows archives use the `.zip` extension instead. Every release also ships a
 
 ## Usage
 
-Run it from the root of a project:
+Gallant takes its input one of three ways.
+
+Pass paths to lint files or directories:
 
 ```sh
-gallant
+gallant .
+gallant main.go pkg/handler.go
 ```
+
+Read a unified diff from stdin with `--diff`. Each changed file becomes one
+evaluation, named by its path in the diff, so rules match the file they
+describe:
+
+```sh
+git diff HEAD~1 | gallant --diff
+```
+
+Read a single file's content from stdin with `--assume-filename`. The name is
+what the rules match, so a pipe can stand in for a file:
+
+```sh
+printf 'package main\n// increment this\n' | gallant --assume-filename main.go
+```
+
+A bare `gallant` prints usage. `--diff` and `--assume-filename` are mutually
+exclusive and take no path operands.
 
 Files are evaluated in parallel, eight at a time by default. Change the number
 of concurrent evaluations with `--jobs`:
 
 ```sh
-gallant --jobs 16
+gallant --jobs 16 .
 ```
 
 ## Output
