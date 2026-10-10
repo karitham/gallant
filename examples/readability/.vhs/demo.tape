@@ -5,7 +5,7 @@ Set FontSize 20
 Set Width 1200
 Set Height 520
 Set Padding 20
-Set TypingSpeed 50ms
+Set TypingSpeed 10ms
 Set CursorBlink false
 
 # Build the CLI and put it on PATH without showing it.
@@ -17,7 +17,7 @@ Show
 
 Type "gallant --provider opencode --model jev-1.13-free --rules examples/readability/rules examples/readability/sample.go"
 Enter
-Sleep 6s
+Sleep 3s
 
 Hide
 Type "rm gallant"
