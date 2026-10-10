@@ -15,7 +15,11 @@ to grow past what anyone actually calls. Defining it at the call site keeps the
 contract as small as that use requires and keeps implementers from dictating
 coupling.
 
-Judge the file by what it declares, not by what it imports or uses:
+Judge the file by what it declares, not by what it imports or uses. Start by
+looking for interface declarations — a `type Name interface { ... }`. A struct,
+a named type over a built-in, or a function is not an interface, and a file that
+declares no interface cannot violate this rule no matter what else it contains,
+so answer no.
 
 - **Violates** — the file declares an interface and also declares the concrete
   type, or types, that implement it, when nothing else in the file consumes it.
@@ -27,8 +31,7 @@ Judge the file by what it declares, not by what it imports or uses:
 - **Does not violate** — the file declares a concrete type and no interface.
   Concrete types are the normal thing for a package to define and export.
 
-A file that declares no interface cannot violate this rule, no matter what else
-it contains. For example, this file violates it, because the interface exists
+For example, this file violates it, because the interface exists
 only for the implementation beside it:
 
 ```go
