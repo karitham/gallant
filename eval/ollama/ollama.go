@@ -60,7 +60,9 @@ func (m *Model) List(ctx context.Context) ([]string, error) {
 	for _, id := range ids {
 		ok, err := isDecision(ctx, m.host, id)
 		if err != nil || ok {
-			decision = append(decision, id)
+			// Ollama tags the default build ":latest"; report the bare name,
+			// which is what the library and callers use.
+			decision = append(decision, strings.TrimSuffix(id, ":latest"))
 		}
 	}
 	return decision, nil

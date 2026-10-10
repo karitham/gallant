@@ -63,7 +63,7 @@ func TestListKeepsDecisionModels(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/models":
 			json.NewEncoder(w).Encode(map[string]any{
-				"data": []map[string]string{{"id": "nimble"}, {"id": "llama3"}},
+				"data": []map[string]string{{"id": "nimble:latest"}, {"id": "llama3:latest"}},
 			})
 		case "/api/show":
 			var req struct {
@@ -71,8 +71,8 @@ func TestListKeepsDecisionModels(t *testing.T) {
 			}
 			json.NewDecoder(r.Body).Decode(&req)
 			caps := map[string][]string{
-				"nimble": {"completion", "decision"},
-				"llama3": {"completion"},
+				"nimble:latest": {"completion", "decision"},
+				"llama3:latest": {"completion"},
 			}
 			json.NewEncoder(w).Encode(map[string]any{"capabilities": caps[req.Model]})
 		default:
@@ -96,7 +96,7 @@ func TestListKeepsAllWhenShowUnavailable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			json.NewEncoder(w).Encode(map[string]any{
-				"data": []map[string]string{{"id": "kev"}, {"id": "laya"}},
+				"data": []map[string]string{{"id": "kev:latest"}, {"id": "laya:latest"}},
 			})
 			return
 		}
