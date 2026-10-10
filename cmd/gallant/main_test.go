@@ -366,6 +366,58 @@ func TestValidateInputsRejectsBareInvocation(t *testing.T) {
 	}
 }
 
+func TestDiffInputsIgnoresMarkerInsideHunk(t *testing.T) {
+	const diff = "diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ b/a.go\n" +
+		"@@ -1 +1,2 @@\n" +
+		" package a\n" +
+		"+diff --git a/b.go b/b.go\n"
+
+	inputs, err := diffInputs(strings.NewReader(diff), func(string) bool { return true })
+	if err != nil {
+		t.Fatalf("diffInputs() error = %v", err)
+	}
+	if len(inputs) != 1 || inputs[0].name != "a.go" {
+		t.Fatalf("diffInputs() = %#v, want only a.go", inputs)
+	}
+	if body := readInput(t, inputs[0]); !strings.Contains(body, "+diff --git a/b.go b/b.go") {
+		t.Errorf("content = %q, want the added marker line kept in a.go", body)
+	}
+}
+
+func TestDiffInputsSkipsLeadingHeader(t *testing.T) {
+	const show = "commit 0123456789abcdef\n" +
+		"Author: A\n" +
+		"\n" +
+		"    a message\n" +
+		"\n" +
+		"diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ b/a.go\n" +
+		"@@ -1 +1 @@\n" +
+		"-old\n" +
+		"+new\n"
+
+	inputs, err := diffInputs(strings.NewReader(show), func(string) bool { return true })
+	if err != nil {
+		t.Fatalf("diffInputs() error = %v", err)
+	}
+	if len(inputs) != 1 || inputs[0].name != "a.go" {
+		t.Fatalf("diffInputs() = %#v, want only a.go", inputs)
+	}
+}
+
+func TestDiffInputsNonDiff(t *testing.T) {
+	inputs, err := diffInputs(strings.NewReader("just some text\n"), func(string) bool { return true })
+	if err != nil {
+		t.Fatalf("diffInputs() error = %v", err)
+	}
+	if len(inputs) != 0 {
+		t.Errorf("diffInputs() = %#v, want none for non-diff input", inputs)
+	}
+}
+
 // delayModel reads the stream, then sleeps before answering, so slower inputs
 // finish after faster ones and completion order differs from input order.
 type delayModel struct {

@@ -283,16 +283,30 @@ func resolveInputs(paths []string, match func(name string) bool) ([]input, error
 
 // diffInputs reads a unified diff and returns one input per changed file whose
 // name matches, so the model reviews only the change rather than whole files.
-// A section starts at a "diff --git" line; the name is the destination path with
-// git's b/ prefix stripped, and the content is the file's whole section,
-// preserved verbatim so the model sees the file's name alongside its hunks.
+// A section starts at a line-initial "diff --git"; the name is the destination
+// path with git's b/ prefix stripped, and the content is the file's whole
+// section, preserved verbatim so the model sees the file's name with its hunks.
+// Splitting only on line-initial markers keeps a hunk that adds a line
+// containing "diff --git" from starting a phantom file.
 func diffInputs(r io.Reader, match func(name string) bool) ([]input, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
+	text := string(data)
+	if !strings.HasPrefix(text, "diff --git ") {
+		// Skip anything before the first section, such as the commit header of
+		// git show output.
+		i := strings.Index(text, "\ndiff --git ")
+		if i < 0 {
+			return nil, nil
+		}
+		text = text[i+1:]
+	}
+	text = strings.TrimPrefix(text, "diff --git ")
+
 	var inputs []input
-	for _, section := range strings.Split(string(data), "diff --git ") {
+	for _, section := range strings.Split(text, "\ndiff --git ") {
 		header, _, _ := strings.Cut(section, "\n")
 		if !strings.HasPrefix(header, "a/") {
 			continue
