@@ -1,4 +1,4 @@
-Output examples/go-review/.vhs/demo.gif
+Output examples/readability/.vhs/demo.gif
 
 Set Shell bash
 Set FontSize 20
@@ -15,7 +15,7 @@ Enter
 Sleep 3s
 Show
 
-Type "gallant --provider opencode --model jev-1.13-free --rules examples/go-review/rules examples/go-review/testdata/sample.go"
+Type "gallant --provider opencode --model jev-1.13-free --rules examples/readability/rules examples/readability/sample.go"
 Enter
 Sleep 6s
 
