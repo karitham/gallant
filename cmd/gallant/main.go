@@ -37,7 +37,12 @@ func main() {
 	jobs := flag.Int("jobs", defaultJobs, "maximum number of files to evaluate concurrently")
 	includePassing := flag.Bool("include-passing", false, "also show rules the file passes")
 	asJSON := flag.Bool("json", false, "emit findings as JSON")
+	diff := flag.Bool("diff", false, "lint a unified diff read from stdin")
 	flag.Parse()
+
+	if err := validateInputs(*diff, flag.Args()); err != nil {
+		fail(err)
+	}
 
 	p, ok := eval.Lookup(*provider)
 	if !ok {
@@ -57,20 +62,27 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model), *jobs, *includePassing, *asJSON); err != nil {
+	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), *diff, p.New(os.Getenv(p.EnvVar), *model), *jobs, *includePassing, *asJSON); err != nil {
 		fail(err)
 	}
 }
 
-func run(ctx context.Context, rulesFS fs.FS, paths []string, model eval.Model, jobs int, includePassing, asJSON bool) error {
+func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, model eval.Model, jobs int, includePassing, asJSON bool) error {
 	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
 	}
 
-	inputs, err := resolveInputs(paths, func(name string) bool {
+	match := func(name string) bool {
 		return len(applicable(loaded, name)) > 0
-	})
+	}
+
+	var inputs []input
+	if diff {
+		inputs, err = diffInputs(os.Stdin, match)
+	} else {
+		inputs, err = resolveInputs(paths, match)
+	}
 	if err != nil {
 		return err
 	}
@@ -224,6 +236,15 @@ func fileInput(path string) input {
 	}
 }
 
+// textInput is an input whose content is already in memory, as for a file's
+// slice of a unified diff.
+func textInput(name, content string) input {
+	return input{
+		name: name,
+		open: func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(content)), nil },
+	}
+}
+
 // resolveInputs expands path operands into matching file inputs, mirroring
 // gofmt's operand handling. An explicit file operand is always included; a
 // directory operand is walked and each file within it is included only when
@@ -250,6 +271,44 @@ func resolveInputs(paths []string, match func(name string) bool) ([]input, error
 		}
 	}
 	return inputs, nil
+}
+
+// diffInputs reads a unified diff and returns one input per changed file whose
+// name matches, so the model reviews only the change rather than whole files.
+// A section starts at a "diff --git" line; the name is the destination path with
+// git's b/ prefix stripped, and the content is the file's whole section,
+// preserved verbatim so the model sees the file's name alongside its hunks.
+func diffInputs(r io.Reader, match func(name string) bool) ([]input, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	var inputs []input
+	for _, section := range strings.Split(string(data), "diff --git ") {
+		header, _, _ := strings.Cut(section, "\n")
+		if !strings.HasPrefix(header, "a/") {
+			continue
+		}
+		fields := strings.Fields(header)
+		if len(fields) < 2 {
+			continue
+		}
+		name := strings.TrimPrefix(fields[len(fields)-1], "b/")
+		if name == "" || (match != nil && !match(filepath.Base(name))) {
+			continue
+		}
+		inputs = append(inputs, textInput(name, "diff --git "+section))
+	}
+	return inputs, nil
+}
+
+// validateInputs rejects flag and operand combinations that name more than one
+// source of input.
+func validateInputs(diff bool, args []string) error {
+	if diff && len(args) > 0 {
+		return errors.New("--diff reads a diff from stdin and takes no path operands")
+	}
+	return nil
 }
 
 func fail(err error) {

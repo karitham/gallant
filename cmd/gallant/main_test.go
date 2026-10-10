@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/madxmike/gallant/eval"
@@ -161,6 +163,152 @@ func TestEvaluateAllStopsOnError(t *testing.T) {
 	if _, err := evaluateAll(context.Background(), paths, []rules.Rule{{AppliesTo: []string{"*.go"}}}, errorModel{}, len(paths)); err == nil {
 		t.Fatal("evaluateAll() error = nil, want an error")
 	}
+}
+
+// exampleDiff changes two files; a.go changes in two places, so it must stay a
+// single evaluation rather than one per hunk.
+const exampleDiff = `diff --git a/a.go b/a.go
+index 1111111..2222222 100644
+--- a/a.go
++++ b/a.go
+@@ -1,2 +1,3 @@
+ package a
++// first
+ func f() {}
+@@ -10,2 +11,3 @@
+ var x = 1
++// second
+ var y = 2
+diff --git a/b.go b/b.go
+index 3333333..4444444 100644
+--- a/b.go
++++ b/b.go
+@@ -1,2 +1,3 @@
+ package b
++// third
+ func g() {}
+`
+
+const noulRule = "---\nappliesTo: \"*.go\"\ntype: noul\n---\nno useless comments\n"
+
+func TestDiffInputsSplitsPerFile(t *testing.T) {
+	inputs, err := diffInputs(strings.NewReader(exampleDiff), func(name string) bool {
+		return strings.HasSuffix(name, ".go")
+	})
+	if err != nil {
+		t.Fatalf("diffInputs() error = %v", err)
+	}
+	if len(inputs) != 2 {
+		t.Fatalf("diffInputs() returned %d inputs, want 2", len(inputs))
+	}
+	if got, want := inputs[0].name, "a.go"; got != want {
+		t.Errorf("inputs[0].name = %q, want %q", got, want)
+	}
+	if got, want := inputs[1].name, "b.go"; got != want {
+		t.Errorf("inputs[1].name = %q, want %q", got, want)
+	}
+
+	body := readInput(t, inputs[0])
+	if !strings.Contains(body, "+// first") || !strings.Contains(body, "+// second") {
+		t.Errorf("a.go content = %q, want both hunks in one input", body)
+	}
+	if strings.Contains(body, "b.go") {
+		t.Errorf("a.go content spilled into b.go: %q", body)
+	}
+}
+
+func TestRunLintsDiffFromStdin(t *testing.T) {
+	stdin(t, exampleDiff)
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
+	if err := run(context.Background(), rulesFS, nil, true, echoModel{}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out()
+	for _, want := range []string{"a.go comments.md noul 90% fail", "b.go comments.md noul 90% fail"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want %q", got, want)
+		}
+	}
+	if n := strings.Count(got, "a.go "); n != 1 {
+		t.Errorf("output = %q, want exactly one evaluation for a.go, got %d", got, n)
+	}
+}
+
+// echoModel answers every rule with a noul finding, so a run reports one finding
+// per (file, rule) and the output names each evaluated file.
+type echoModel struct{}
+
+func (echoModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return nil, err
+	}
+	findings := make([]eval.Finding, len(rs))
+	for i, rule := range rs {
+		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: 0.9}
+	}
+	return findings, nil
+}
+
+// stdin points os.Stdin at content for the duration of the test.
+func stdin(t *testing.T, content string) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdin
+	os.Stdin = f
+	t.Cleanup(func() {
+		os.Stdin = orig
+		f.Close()
+	})
+}
+
+// stdout redirects os.Stdout; the returned func yields what was written.
+func stdout(t *testing.T) func() string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = orig
+		r.Close()
+	})
+	return func() string {
+		w.Close()
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+}
+
+// readInput opens in and returns its content.
+func readInput(t *testing.T, in input) string {
+	t.Helper()
+	r, err := in.open()
+	if err != nil {
+		t.Fatalf("open() error = %v", err)
+	}
+	defer r.Close()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read %q: %v", in.name, err)
+	}
+	return string(b)
 }
 
 // delayModel reads the stream, then sleeps before answering, so slower inputs
