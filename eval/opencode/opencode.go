@@ -55,10 +55,6 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 
 	questions := make(map[string]question, len(rs))
 	for _, r := range rs {
-		instructions := r.Body
-		if r.Type == rules.TypeNoul {
-			instructions = "Does this file violate the following rule?\n\n" + r.Body
-		}
 		var criteria any
 		switch {
 		case r.Criteria.Options != nil:
@@ -66,7 +62,7 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 		case r.Criteria.Levels != nil:
 			criteria = r.Criteria.Levels
 		}
-		questions[r.Path] = question{Type: string(r.Type), Instructions: instructions, Criteria: criteria}
+		questions[r.Path] = question{Type: string(r.Type), Instructions: r.Instructions(), Criteria: criteria}
 	}
 
 	body, err := json.Marshal(request{

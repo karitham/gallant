@@ -110,6 +110,16 @@ func (r Rule) Applies(name string) bool {
 	return false
 }
 
+// Instructions is the text a model is asked about for this rule. A noul body
+// states a rule, so it is framed as a question; choice and score bodies already
+// read as instructions.
+func (r Rule) Instructions() string {
+	if r.Type == TypeNoul {
+		return "Does this file violate the following rule?\n\n" + r.Body
+	}
+	return r.Body
+}
+
 // Load reads every markdown rule from fsys, including subdirectories. Rules are
 // returned in lexical path order. Hidden files and directories (those whose name
 // begins with ".") are ignored.
