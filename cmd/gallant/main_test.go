@@ -222,7 +222,7 @@ func TestRunLintsDiffFromStdin(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, true, echoModel{}, 1, false, false); err != nil {
+	if err := run(context.Background(), rulesFS, nil, true, "", echoModel{}, 1, false, false); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 
@@ -309,6 +309,55 @@ func readInput(t *testing.T, in input) string {
 		t.Fatalf("read %q: %v", in.name, err)
 	}
 	return string(b)
+}
+
+func TestRunAssumesFilenameFromStdin(t *testing.T) {
+	stdin(t, "package a\n// increment i\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", echoModel{}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
+		t.Errorf("output = %q, want a finding named a.go", got)
+	}
+}
+
+func TestRunAssumeFilenameSelectsRules(t *testing.T) {
+	stdin(t, "hello")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "notes.txt", echoModel{}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); got != "" {
+		t.Errorf("output = %q, want none: the *.go rule does not match notes.txt", got)
+	}
+}
+
+func TestValidateInputs(t *testing.T) {
+	tests := map[string]struct {
+		diff           bool
+		assumeFilename string
+		args           []string
+		wantErr        bool
+	}{
+		"paths only":           {args: []string{"."}},
+		"diff":                 {diff: true},
+		"assume filename":      {assumeFilename: "a.go"},
+		"diff and assume":      {diff: true, assumeFilename: "a.go", wantErr: true},
+		"diff with operands":   {diff: true, args: []string{"."}, wantErr: true},
+		"assume with operands": {assumeFilename: "a.go", args: []string{"."}, wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateInputs(tt.diff, tt.assumeFilename, tt.args); (err != nil) != tt.wantErr {
+				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 // delayModel reads the stream, then sleeps before answering, so slower inputs

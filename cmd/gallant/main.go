@@ -38,9 +38,10 @@ func main() {
 	includePassing := flag.Bool("include-passing", false, "also show rules the file passes")
 	asJSON := flag.Bool("json", false, "emit findings as JSON")
 	diff := flag.Bool("diff", false, "lint a unified diff read from stdin")
+	assumeFilename := flag.String("assume-filename", "", "lint a single file read from stdin under this name")
 	flag.Parse()
 
-	if err := validateInputs(*diff, flag.Args()); err != nil {
+	if err := validateInputs(*diff, *assumeFilename, flag.Args()); err != nil {
 		fail(err)
 	}
 
@@ -62,12 +63,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), *diff, p.New(os.Getenv(p.EnvVar), *model), *jobs, *includePassing, *asJSON); err != nil {
+	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), *diff, *assumeFilename, p.New(os.Getenv(p.EnvVar), *model), *jobs, *includePassing, *asJSON); err != nil {
 		fail(err)
 	}
 }
 
-func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, model eval.Model, jobs int, includePassing, asJSON bool) error {
+func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFilename string, model eval.Model, jobs int, includePassing, asJSON bool) error {
 	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
@@ -78,9 +79,12 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, model ev
 	}
 
 	var inputs []input
-	if diff {
+	switch {
+	case diff:
 		inputs, err = diffInputs(os.Stdin, match)
-	} else {
+	case assumeFilename != "":
+		inputs, err = namedInput(assumeFilename, os.Stdin)
+	default:
 		inputs, err = resolveInputs(paths, match)
 	}
 	if err != nil {
@@ -302,11 +306,26 @@ func diffInputs(r io.Reader, match func(name string) bool) ([]input, error) {
 	return inputs, nil
 }
 
+// namedInput reads one input's content from r and names it name, so a stream
+// that is not a diff can still be linted as a named file.
+func namedInput(name string, r io.Reader) ([]input, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	return []input{textInput(name, string(data))}, nil
+}
+
 // validateInputs rejects flag and operand combinations that name more than one
 // source of input.
-func validateInputs(diff bool, args []string) error {
-	if diff && len(args) > 0 {
+func validateInputs(diff bool, assumeFilename string, args []string) error {
+	switch {
+	case diff && assumeFilename != "":
+		return errors.New("--diff and --assume-filename are mutually exclusive")
+	case diff && len(args) > 0:
 		return errors.New("--diff reads a diff from stdin and takes no path operands")
+	case assumeFilename != "" && len(args) > 0:
+		return errors.New("--assume-filename reads from stdin and takes no path operands")
 	}
 	return nil
 }
