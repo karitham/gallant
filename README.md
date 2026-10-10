@@ -1,9 +1,20 @@
 # gallant
 
-Gallant is a linter whose rules are written in Markdown.
+Gallant is a customizable linter built to utilize Decision Models (i.e. Jev, Clef, and other system one models) to lint your code, documents, and any other text-based files.
 
-Because rules are plain files, they can be versioned alongside the code they
-describe and shared across projects.
+## Why Gallant?
+
+Some rules that would be great to express as lints in a codebase are very hard to perform in traditional deterministic systems -- "Does the comments in this file repeat what the code already says". As such, these type of checks are left either to human reviewers in PRs or to expensive and slow LLM models. 
+
+Decision Models are fast, cheap(er), and can work on more fuzzy rules that traditional software has not been able to. Gallant is a solution to provide a simple to use cli program with no runtime requirements and minimal dependencies. 
+
+#### Why not X other Decision Model linter?
+
+I looked at the other available tools doing this type of work, and I was not left impressed. All the tools I saw were immense slop dumps, required runtimes like python/npm, servers you had to continually run, terrible CLIs, or had many many dependencies (aka supply chain attack vectors!)
+
+I build Gallant to (try) and avoid all of those things. Gallant requires no runtime as it is in go. The CLI adhears to standard unix utility principles such as working off files/filepaths, minimizing configuration needed, and doing one thing well. 
+
+Please, if you find it useful give it a share in your favorite tech community!
 
 ## Installation
 
