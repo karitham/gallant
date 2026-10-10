@@ -27,6 +27,24 @@ Judge the file by what it declares, not by what it imports or uses:
 - **Does not violate** — the file declares a concrete type and no interface.
   Concrete types are the normal thing for a package to define and export.
 
+A file that declares no interface cannot violate this rule, no matter what else
+it contains. For example, this file violates it, because the interface exists
+only for the implementation beside it:
+
+```go
+type Store interface{ Get(id string) (string, error) }
+
+type memoryStore struct{}
+
+func (memoryStore) Get(id string) (string, error) { return "", nil }
+```
+
+This file does not, because the interface states what it needs from elsewhere:
+
+```go
+type Store interface{ Get(id string) (string, error) }
+```
+
 Skip interfaces that back a public, widely-consumed API whose consumers you
 cannot see from here, and interfaces that exist only to satisfy an external
 contract. These are cases where the file cannot tell you where the consumer is.
