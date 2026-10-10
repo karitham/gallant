@@ -1,12 +1,14 @@
 // Package rules reads and parses gallant lint rules.
 //
-// A rule is a markdown file whose optional frontmatter carries configuration
-// and whose body is the lint text. Rules are loaded from an fs.FS supplied by
-// the caller and declare which file names they apply to through the "appliesTo"
+// A rule is a markdown file whose frontmatter declares a decision type and whose
+// body is the lint text. Rules are loaded from an fs.FS supplied by the caller
+// and declare which file names they apply to through the "appliesTo" glob
+// field.
 // glob field, matched against file names rather than paths.
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -48,9 +50,8 @@ type Rule struct {
 // including any leading or trailing blank lines.
 func Parse(data []byte) (Rule, error) {
 	fm, body, ok := splitFrontmatter(string(data))
-	rule := Rule{Type: TypeNoul, Body: body}
 	if !ok {
-		return rule, nil
+		return Rule{}, errors.New("missing frontmatter")
 	}
 
 	var cfg struct {
@@ -61,12 +62,26 @@ func Parse(data []byte) (Rule, error) {
 	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
 		return Rule{}, err
 	}
-	rule.AppliesTo = cfg.AppliesTo
-	rule.Criteria = cfg.Criteria
-	if cfg.Type != "" {
-		rule.Type = cfg.Type
+	switch cfg.Type {
+	case TypeNoul:
+	case TypeChoice:
+		if len(cfg.Criteria.Options) == 0 {
+			return Rule{}, errors.New("type choice requires criteria options")
+		}
+	case TypeScore:
+		if len(cfg.Criteria.Levels) == 0 {
+			return Rule{}, errors.New("type score requires criteria levels")
+		}
+	default:
+		return Rule{}, fmt.Errorf("missing or invalid type %q", cfg.Type)
 	}
-	return rule, nil
+
+	return Rule{
+		AppliesTo: cfg.AppliesTo,
+		Type:      cfg.Type,
+		Criteria:  cfg.Criteria,
+		Body:      body,
+	}, nil
 }
 
 // ParseFile parses the rule at name within fsys.

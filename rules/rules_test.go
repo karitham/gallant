@@ -16,67 +16,55 @@ func TestParse(t *testing.T) {
 	}{
 		{
 			name:      "scalar appliesTo",
-			src:       "---\nappliesTo: \"**/*.go\"\n---\nCheck for things.\n",
+			src:       "---\ntype: noul\nappliesTo: \"**/*.go\"\n---\nCheck for things.\n",
 			appliesTo: []string{"**/*.go"},
 			body:      "Check for things.\n",
 		},
 		{
 			name:      "unquoted scalar appliesTo",
-			src:       "---\nappliesTo: src/**\n---\nbody\n",
+			src:       "---\ntype: noul\nappliesTo: src/**\n---\nbody\n",
 			appliesTo: []string{"src/**"},
 			body:      "body\n",
 		},
 		{
 			name:      "inline list",
-			src:       "---\nappliesTo: [\"**/*.go\", '**/*.ts']\n---\nbody\n",
+			src:       "---\ntype: noul\nappliesTo: [\"**/*.go\", '**/*.ts']\n---\nbody\n",
 			appliesTo: []string{"**/*.go", "**/*.ts"},
 			body:      "body\n",
 		},
 		{
 			name:      "block list",
-			src:       "---\nappliesTo:\n  - \"**/*.go\"\n  - \"**/*.ts\"\n---\nbody\n",
+			src:       "---\ntype: noul\nappliesTo:\n  - \"**/*.go\"\n  - \"**/*.ts\"\n---\nbody\n",
 			appliesTo: []string{"**/*.go", "**/*.ts"},
 			body:      "body\n",
 		},
 		{
 			name:      "other fields and comments ignored",
-			src:       "---\n# a comment\nseverity: error\nappliesTo: \"*.go\"\n---\nbody\n",
+			src:       "---\n# a comment\nseverity: error\ntype: noul\nappliesTo: \"*.go\"\n---\nbody\n",
 			appliesTo: []string{"*.go"},
 			body:      "body\n",
 		},
 		{
-			name:      "no frontmatter keeps whole input as body",
-			src:       "Just a rule body.\n",
-			appliesTo: nil,
-			body:      "Just a rule body.\n",
-		},
-		{
-			name:      "unterminated frontmatter is treated as body",
-			src:       "---\nappliesTo: \"*.go\"\nno closing delimiter\n",
-			appliesTo: nil,
-			body:      "---\nappliesTo: \"*.go\"\nno closing delimiter\n",
-		},
-		{
 			name:      "body preserved verbatim including dashes and blank lines",
-			src:       "---\nappliesTo: \"a\"\n---\n\nline one\n---\nline two\n",
+			src:       "---\ntype: noul\nappliesTo: \"a\"\n---\n\nline one\n---\nline two\n",
 			appliesTo: []string{"a"},
 			body:      "\nline one\n---\nline two\n",
 		},
 		{
 			name:      "quoted value containing a colon",
-			src:       "---\nappliesTo: \"**/*.{go,ts}\"\n---\nbody\n",
+			src:       "---\ntype: noul\nappliesTo: \"**/*.{go,ts}\"\n---\nbody\n",
 			appliesTo: []string{"**/*.{go,ts}"},
 			body:      "body\n",
 		},
 		{
 			name:      "empty appliesTo yields no patterns",
-			src:       "---\nappliesTo:\n---\nbody\n",
+			src:       "---\ntype: noul\nappliesTo:\n---\nbody\n",
 			appliesTo: nil,
 			body:      "body\n",
 		},
 		{
 			name:      "CRLF line endings",
-			src:       "---\r\nappliesTo: \"*.go\"\r\n---\r\nbody\r\n",
+			src:       "---\r\ntype: noul\r\nappliesTo: \"*.go\"\r\n---\r\nbody\r\n",
 			appliesTo: []string{"*.go"},
 			body:      "body\r\n",
 		},
@@ -87,6 +75,9 @@ func TestParse(t *testing.T) {
 			rule, err := Parse([]byte(tt.src))
 			if err != nil {
 				t.Fatalf("Parse() error = %v", err)
+			}
+			if rule.Type != TypeNoul {
+				t.Errorf("Type = %q, want %q", rule.Type, TypeNoul)
 			}
 			if !reflect.DeepEqual(rule.AppliesTo, tt.appliesTo) {
 				t.Errorf("AppliesTo = %#v, want %#v", rule.AppliesTo, tt.appliesTo)
@@ -128,19 +119,15 @@ func TestParseScore(t *testing.T) {
 	}
 }
 
-func TestParserDefaultsToNoul(t *testing.T) {
-	rule, err := Parse([]byte("---\nappliesTo: \"*.go\"\n---\nbody\n"))
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-	if rule.Type != TypeNoul {
-		t.Errorf("Type = %q, want %q", rule.Type, TypeNoul)
-	}
-}
-
-func TestParseInvalidFrontmatter(t *testing.T) {
+func TestParseErrors(t *testing.T) {
 	tests := map[string]string{
-		"not a mapping": "---\nnot a key value line\n---\nbody\n",
+		"not a mapping":      "---\nnot a key value line\n---\nbody\n",
+		"no frontmatter":     "Just a rule body.\n",
+		"unterminated":       "---\ntype: noul\nappliesTo: \"*.go\"\nno closing delimiter\n",
+		"missing type":       "---\nappliesTo: \"*.go\"\n---\nbody\n",
+		"unknown type":       "---\ntype: nope\n---\nbody\n",
+		"choice no criteria": "---\ntype: choice\n---\nbody\n",
+		"score no criteria":  "---\ntype: score\n---\nbody\n",
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -174,10 +161,10 @@ func TestRuleAppliesNoGlobs(t *testing.T) {
 
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
-	writeRule(t, dir, "a.md", "---\nappliesTo: \"*.go\"\n---\nfirst\n")
-	writeRule(t, dir, "nested/b.markdown", "---\nappliesTo:\n  - \"*.ts\"\n---\nsecond\n")
+	writeRule(t, dir, "a.md", "---\ntype: noul\nappliesTo: \"*.go\"\n---\nfirst\n")
+	writeRule(t, dir, "nested/b.markdown", "---\ntype: noul\nappliesTo:\n  - \"*.ts\"\n---\nsecond\n")
 	writeRule(t, dir, "notes.txt", "not a rule\n")
-	writeRule(t, dir, ".hidden/c.md", "---\nappliesTo: \"*.py\"\n---\nhidden\n")
+	writeRule(t, dir, ".hidden/c.md", "---\ntype: noul\nappliesTo: \"*.py\"\n---\nhidden\n")
 
 	rules, err := Load(os.DirFS(dir))
 	if err != nil {

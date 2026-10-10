@@ -1,5 +1,6 @@
 ---
 appliesTo: "*.md"
+type: noul
 ---
 
 # Title

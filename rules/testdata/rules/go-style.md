@@ -1,5 +1,6 @@
 ---
 appliesTo: "*.go"
+type: noul
 ---
 # Go style
 

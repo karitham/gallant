@@ -22,12 +22,6 @@ type: noul
 criteria: []
 body: "Keep types explicit.\n"
 
-path: no-frontmatter.md
-appliesTo: []
-type: noul
-criteria: []
-body: "Always write tests.\n"
-
 path: readability.md
 appliesTo: ["*.md"]
 type: score
