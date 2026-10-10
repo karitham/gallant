@@ -17,12 +17,12 @@ import (
 
 // defaultRulesDir is where gallant looks for lint rules, relative to the
 // current working directory.
-const defaultRulesDir = "agents/gallant"
+const defaultRulesDir = ".agents/gallant"
 
 func main() {
 	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
 	model := flag.String("model", "", "model name")
-	rulesDir := flag.String("rules", defaultRulesDir, "directory containing lint rules")
+	rulesDir := flag.String("rules", defaultRulesDir, "directory of lint rules, relative to the current working directory")
 	flag.Parse()
 
 	p, ok := eval.Lookup(*provider)
