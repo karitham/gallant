@@ -42,6 +42,10 @@ func main() {
 	flag.Parse()
 
 	if err := validateInputs(*diff, *assumeFilename, flag.Args()); err != nil {
+		if errors.Is(err, errNoInput) {
+			flag.Usage()
+			os.Exit(2)
+		}
 		fail(err)
 	}
 
@@ -316,8 +320,11 @@ func namedInput(name string, r io.Reader) ([]input, error) {
 	return []input{textInput(name, string(data))}, nil
 }
 
-// validateInputs rejects flag and operand combinations that name more than one
-// source of input.
+// errNoInput reports a bare invocation: no path operands and no stdin mode.
+var errNoInput = errors.New("no input")
+
+// validateInputs rejects flag and operand combinations that name no input or
+// more than one source of input.
 func validateInputs(diff bool, assumeFilename string, args []string) error {
 	switch {
 	case diff && assumeFilename != "":
@@ -326,6 +333,8 @@ func validateInputs(diff bool, assumeFilename string, args []string) error {
 		return errors.New("--diff reads a diff from stdin and takes no path operands")
 	case assumeFilename != "" && len(args) > 0:
 		return errors.New("--assume-filename reads from stdin and takes no path operands")
+	case !diff && assumeFilename == "" && len(args) == 0:
+		return errNoInput
 	}
 	return nil
 }

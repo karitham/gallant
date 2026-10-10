@@ -360,6 +360,12 @@ func TestValidateInputs(t *testing.T) {
 	}
 }
 
+func TestValidateInputsRejectsBareInvocation(t *testing.T) {
+	if err := validateInputs(false, "", nil); !errors.Is(err, errNoInput) {
+		t.Errorf("validateInputs() error = %v, want errNoInput", err)
+	}
+}
+
 // delayModel reads the stream, then sleeps before answering, so slower inputs
 // finish after faster ones and completion order differs from input order.
 type delayModel struct {
