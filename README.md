@@ -38,6 +38,9 @@ Windows archives use the `.zip` extension instead. Every release also ships a
 
 ## Usage
 
+Gallant evaluates files with a decision model served by a provider. The default
+is `opencode`; see [PROVIDERS.md](PROVIDERS.md) for the available providers.
+
 Gallant takes its input one of three ways.
 
 Pass paths to lint files or directories:
