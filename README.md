@@ -88,6 +88,10 @@ For machine consumption, `--json` emits an array of objects instead:
 gallant --json
 ```
 
+A file that cannot be evaluated — for example, one too large for the model's
+request limit — is reported on standard error as `gallant: <file>: <reason>`. The
+remaining files are still evaluated, and the run exits nonzero.
+
 ## Status
 
 Gallant is under active development.

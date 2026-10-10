@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/madxmike/gallant/eval"
+	_ "github.com/madxmike/gallant/eval/ollama"
 	_ "github.com/madxmike/gallant/eval/opencode"
 	"github.com/madxmike/gallant/rules"
 )
@@ -53,10 +54,27 @@ func main() {
 	if !ok {
 		fail(fmt.Errorf("unknown provider %q (want one of: %s)", *provider, strings.Join(eval.Names(), ", ")))
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	if *model == "" {
 		*model = p.Default
 	}
-	if !slices.Contains(p.Models, *model) {
+	m := p.New(os.Getenv(p.KeyEnvVar), os.Getenv(p.URLEnvVar), *model)
+
+	// A model may offer a discovery endpoint, in which case the model set is
+	// read at startup rather than declared. When discovery fails the model name
+	// is passed through unchecked and the server reports per-file problems.
+	if lister, ok := m.(eval.Lister); ok {
+		names, err := lister.List(ctx)
+		switch {
+		case err != nil:
+			fmt.Fprintf(os.Stderr, "gallant: %s: cannot list models: %v; passing --model through\n", p.Name, err)
+		case len(names) > 0 && !slices.Contains(names, *model):
+			fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(names, ", ")))
+		}
+	} else if !slices.Contains(p.Models, *model) {
 		fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(p.Models, ", ")))
 	}
 
@@ -64,10 +82,7 @@ func main() {
 		fail(err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), *diff, *assumeFilename, p.New(os.Getenv(p.EnvVar), *model), *jobs, *includePassing, *asJSON); err != nil {
+	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), *diff, *assumeFilename, m, *jobs, *includePassing, *asJSON); err != nil {
 		fail(err)
 	}
 }
@@ -101,8 +116,14 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	}
 
 	records := []record{}
-	for i, findings := range results {
-		for _, finding := range findings {
+	var failed int
+	for i, res := range results {
+		if res.err != nil {
+			failed++
+			fmt.Fprintf(os.Stderr, "gallant: %s: %v\n", inputs[i].name, res.err)
+			continue
+		}
+		for _, finding := range res.findings {
 			result, confidence := finding.Result, finding.Confidence
 			if finding.Type == rules.TypeNoul {
 				if finding.Confidence <= 0.5 {
@@ -127,13 +148,20 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(records)
+		if err := enc.Encode(records); err != nil {
+			return err
+		}
+	} else {
+		for _, r := range records {
+			// The result is the only free-text field, so it is the only one that
+			// can contain a newline or tab and need escaping.
+			result := strconv.Quote(r.Result)
+			fmt.Printf("%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, r.Confidence*100, result[1:len(result)-1])
+		}
 	}
-	for _, r := range records {
-		// The result is the only free-text field, so it is the only one that
-		// can contain a newline or tab and need escaping.
-		result := strconv.Quote(r.Result)
-		fmt.Printf("%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, r.Confidence*100, result[1:len(result)-1])
+
+	if failed > 0 {
+		return fmt.Errorf("could not evaluate %d of %d files", failed, len(inputs))
 	}
 	return nil
 }
@@ -149,11 +177,19 @@ type record struct {
 	Confidence float64    `json:"confidence"`
 }
 
+// result is one input's evaluation: its findings, or the error that stopped it.
+// A failed input does not affect the others, so one unreadable or oversized file
+// does not abandon the rest of the run.
+type result struct {
+	findings []eval.Finding
+	err      error
+}
+
 // evaluateAll evaluates every input, up to jobs at a time, returning each
-// input's findings indexed by its position in inputs. Output is assembled in
-// input order regardless of the order evaluations finish. The first error, or
-// ctx cancellation, stops further dispatch and cancels in-flight work.
-func evaluateAll(ctx context.Context, inputs []input, all []rules.Rule, model eval.Model, jobs int) ([][]eval.Finding, error) {
+// input's result indexed by its position in inputs. Output is assembled in
+// input order regardless of the order evaluations finish. ctx cancellation stops
+// further dispatch and cancels in-flight work.
+func evaluateAll(ctx context.Context, inputs []input, all []rules.Rule, model eval.Model, jobs int) ([]result, error) {
 	if jobs < 1 {
 		jobs = 1
 	}
@@ -161,13 +197,9 @@ func evaluateAll(ctx context.Context, inputs []input, all []rules.Rule, model ev
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results := make([][]eval.Finding, len(inputs))
+	results := make([]result, len(inputs))
 	sem := make(chan struct{}, jobs)
-	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		firstErr error
-	)
+	var wg sync.WaitGroup
 
 dispatch:
 	for i, in := range inputs {
@@ -181,23 +213,11 @@ dispatch:
 			defer wg.Done()
 			defer func() { <-sem }()
 			findings, err := evaluate(ctx, in, all, model)
-			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				mu.Unlock()
-				cancel()
-				return
-			}
-			results[i] = findings
+			results[i] = result{findings: findings, err: err}
 		}(i, in)
 	}
 	wg.Wait()
 
-	if firstErr != nil {
-		return nil, firstErr
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

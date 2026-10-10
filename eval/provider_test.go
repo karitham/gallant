@@ -6,14 +6,14 @@ import (
 )
 
 func TestRegisterAndLookup(t *testing.T) {
-	Register(Provider{Name: "test-provider", EnvVar: "TEST_API_KEY"})
+	Register(Provider{Name: "test-provider", KeyEnvVar: "TEST_API_KEY"})
 
 	p, ok := Lookup("test-provider")
 	if !ok {
 		t.Fatal("Lookup() did not find a registered provider")
 	}
-	if p.EnvVar != "TEST_API_KEY" {
-		t.Errorf("EnvVar = %q, want %q", p.EnvVar, "TEST_API_KEY")
+	if p.KeyEnvVar != "TEST_API_KEY" {
+		t.Errorf("KeyEnvVar = %q, want %q", p.KeyEnvVar, "TEST_API_KEY")
 	}
 }
 

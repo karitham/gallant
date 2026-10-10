@@ -148,20 +148,27 @@ func TestEvaluateAllPreservesOrder(t *testing.T) {
 	// results in completion order would surface here.
 	want := []string{"slow", "fast", "medium"}
 	for i, w := range want {
-		if len(results[i]) != 1 || results[i][0].Result != w {
+		if len(results[i].findings) != 1 || results[i].findings[0].Result != w {
 			t.Errorf("results[%d] = %#v, want one finding with result %q", i, results[i], w)
 		}
 	}
 }
 
-func TestEvaluateAllStopsOnError(t *testing.T) {
+// A failing input is reported per file, not as a failure of the whole run.
+func TestEvaluateAllReportsPerFileError(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "a.go", "")
 	write(t, dir, "b.go", "")
 	paths := []input{fileInput(filepath.Join(dir, "a.go")), fileInput(filepath.Join(dir, "b.go"))}
 
-	if _, err := evaluateAll(context.Background(), paths, []rules.Rule{{AppliesTo: []string{"*.go"}}}, errorModel{}, len(paths)); err == nil {
-		t.Fatal("evaluateAll() error = nil, want an error")
+	results, err := evaluateAll(context.Background(), paths, []rules.Rule{{AppliesTo: []string{"*.go"}}}, errorModel{}, len(paths))
+	if err != nil {
+		t.Fatalf("evaluateAll() error = %v, want nil: a per-file failure is not a run failure", err)
+	}
+	for i, res := range results {
+		if res.err == nil {
+			t.Errorf("results[%d].err = nil, want the model's error", i)
+		}
 	}
 }
 
@@ -252,6 +259,26 @@ func (echoModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 	return findings, nil
 }
 
+// pickyModel answers like echoModel but fails when an input contains bad, so a
+// single failure can be shown to be reported per file without abandoning the
+// rest of the run.
+type pickyModel struct{ bad string }
+
+func (m pickyModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(string(b), m.bad) {
+		return nil, errors.New("input too large")
+	}
+	findings := make([]eval.Finding, len(rs))
+	for i, rule := range rs {
+		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: 0.9}
+	}
+	return findings, nil
+}
+
 // stdin points os.Stdin at content for the duration of the test.
 func stdin(t *testing.T, content string) {
 	t.Helper()
@@ -284,6 +311,29 @@ func stdout(t *testing.T) func() string {
 	os.Stdout = w
 	t.Cleanup(func() {
 		os.Stdout = orig
+		r.Close()
+	})
+	return func() string {
+		w.Close()
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+}
+
+// stderr redirects os.Stderr; the returned func yields what was written.
+func stderr(t *testing.T) func() string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = orig
 		r.Close()
 	})
 	return func() string {
@@ -334,6 +384,36 @@ func TestRunAssumeFilenameSelectsRules(t *testing.T) {
 	}
 	if got := out(); got != "" {
 		t.Errorf("output = %q, want none: the *.go rule does not match notes.txt", got)
+	}
+}
+
+// A file that cannot be evaluated is reported on stderr and does not stop the
+// other files: their findings still print and the run still fails.
+func TestRunReportsFailedFileAndContinues(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "good.go", "ok")
+	write(t, dir, "bad.go", "oversized")
+
+	out := stdout(t)
+	errOut := stderr(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
+	err := run(context.Background(), rulesFS, []string{dir}, false, "", pickyModel{bad: "oversized"}, 1, false, false)
+	if err == nil {
+		t.Error("run() error = nil, want a failure when a file could not be evaluated")
+	}
+
+	got := out()
+	if !strings.Contains(got, "good.go comments.md noul 90% fail") {
+		t.Errorf("output = %q, want a finding for good.go", got)
+	}
+	if strings.Contains(got, "bad.go") {
+		t.Errorf("output = %q, want no finding for the failed file", got)
+	}
+
+	want := "gallant: " + filepath.Join(dir, "bad.go") + ": input too large"
+	if text := errOut(); !strings.Contains(text, want) {
+		t.Errorf("stderr = %q, want %q", text, want)
 	}
 }
 

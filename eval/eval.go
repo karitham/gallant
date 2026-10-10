@@ -23,3 +23,9 @@ type Finding struct {
 type Model interface {
 	Evaluate(ctx context.Context, r io.Reader, rules []rules.Rule) ([]Finding, error)
 }
+
+// Lister is implemented by models that can report the model names they offer,
+// so a provider's set can be discovered at startup rather than declared.
+type Lister interface {
+	List(ctx context.Context) ([]string, error)
+}
