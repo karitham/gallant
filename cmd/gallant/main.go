@@ -22,6 +22,7 @@ const defaultRulesDir = "agents/gallant"
 func main() {
 	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
 	model := flag.String("model", "", "model name")
+	rulesDir := flag.String("rules", defaultRulesDir, "directory containing lint rules")
 	flag.Parse()
 
 	p, ok := eval.Lookup(*provider)
@@ -35,10 +36,10 @@ func main() {
 		fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(p.Models, ", ")))
 	}
 
-	if _, err := os.Stat(defaultRulesDir); err != nil {
+	if _, err := os.Stat(*rulesDir); err != nil {
 		fail(err)
 	}
-	if err := run(os.DirFS(defaultRulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model)); err != nil {
+	if err := run(os.DirFS(*rulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model)); err != nil {
 		fail(err)
 	}
 }
