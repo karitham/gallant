@@ -98,16 +98,6 @@ Gallant is under active development.
 
 ## Development
 
-Enable the repository's git hooks, which include a pre-commit check that runs
-gallant over the source:
-
-```sh
-git config core.hooksPath .githooks
-```
-
-The check runs only when `OPENCODE_API_KEY` is set, and skips with a notice
-otherwise.
-
 Run the tests:
 
 ```sh
