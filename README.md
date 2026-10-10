@@ -63,6 +63,16 @@ change:
 go test ./rules -update
 ```
 
+## Contributing
+
+The examples ship terminal recordings generated with
+[VHS](https://github.com/charmbracelet/vhs). Re-recording them requires VHS to
+be installed:
+
+```sh
+OPENCODE_API_KEY=... vhs examples/ste100/.vhs/demo.tape
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
