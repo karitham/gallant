@@ -18,6 +18,10 @@ Please, if you find it useful give it a share in your favorite tech community!
 
 ## Installation
 
+Releases are available to install on the [Releases](https://github.com/madxmike/gallant/releases/) page. 
+
+#### Build From Source
+
 Install the latest release with Go:
 
 ```sh
