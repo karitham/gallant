@@ -2,7 +2,7 @@
 
 Checks whether a markdown document follows ASD-STE100 Simplified Technical English.
 
-![demo](vhs/demo.gif)
+![demo](.vhs/demo.gif)
 
 - `rules/ste100.md` — the rule.
 - `doc.md` — a document that violates the rule.
@@ -20,5 +20,5 @@ The document is evaluated by a model, so the API key is required.
 Re-record the demo GIF with [VHS](https://github.com/charmbracelet/vhs):
 
 ```sh
-OPENCODE_API_KEY=... vhs examples/ste100/vhs/demo.tape
+OPENCODE_API_KEY=... vhs examples/ste100/.vhs/demo.tape
 ```

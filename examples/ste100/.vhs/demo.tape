@@ -1,4 +1,4 @@
-Output examples/ste100/vhs/demo.gif
+Output examples/ste100/.vhs/demo.gif
 
 Set Shell bash
 Set FontSize 20
