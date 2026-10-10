@@ -8,10 +8,11 @@ import (
 	"github.com/madxmike/gallant/rules"
 )
 
-// Finding is one rule the model flagged for a file.
+// Finding is one rule's result for a file. Confidence is the model's
+// probability that the rule is violated, from 0 to 1.
 type Finding struct {
-	Rule       string  // the rule that was flagged
-	Confidence float64 // the model's confidence, from 0 to 1
+	Rule       string
+	Confidence float64
 }
 
 // Model evaluates a file against the rules that apply to it, returning its

@@ -94,7 +94,7 @@ func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error
 
 	var findings []eval.Finding
 	for _, r := range rs {
-		if a, ok := res.Answers[r.Path]; ok && a.Noul > 0.5 {
+		if a, ok := res.Answers[r.Path]; ok {
 			findings = append(findings, eval.Finding{Rule: r.Path, Confidence: a.Noul})
 		}
 	}

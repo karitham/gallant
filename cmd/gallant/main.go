@@ -23,6 +23,7 @@ func main() {
 	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
 	model := flag.String("model", "", "model name")
 	rulesDir := flag.String("rules", defaultRulesDir, "directory of lint rules, relative to the current working directory")
+	includePassing := flag.Bool("include-passing", false, "also show rules the file passes")
 	flag.Parse()
 
 	p, ok := eval.Lookup(*provider)
@@ -39,12 +40,12 @@ func main() {
 	if _, err := os.Stat(*rulesDir); err != nil {
 		fail(err)
 	}
-	if err := run(os.DirFS(*rulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model)); err != nil {
+	if err := run(os.DirFS(*rulesDir), flag.Args(), p.New(os.Getenv(p.EnvVar), *model), *includePassing); err != nil {
 		fail(err)
 	}
 }
 
-func run(rulesFS fs.FS, paths []string, model eval.Model) error {
+func run(rulesFS fs.FS, paths []string, model eval.Model, includePassing bool) error {
 	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
@@ -67,17 +68,26 @@ func run(rulesFS fs.FS, paths []string, model eval.Model) error {
 		}
 	}()
 
+	printed := false
 	for _, f := range files {
 		findings, err := eval.File(f, loaded, model)
 		if err != nil {
 			return err
 		}
-		if len(findings) == 0 {
-			continue
-		}
-		fmt.Println(f.Name())
 		for _, finding := range findings {
-			fmt.Printf(" - %s (%.0f%% confidence)\n", finding.Rule, finding.Confidence*100)
+			passing := finding.Confidence <= 0.5
+			if passing && !includePassing {
+				continue
+			}
+			if !printed {
+				fmt.Println(f.Name())
+				printed = true
+			}
+			if passing {
+				fmt.Printf(" + %s (%.0f%% confidence)\n", finding.Rule, (1-finding.Confidence)*100)
+			} else {
+				fmt.Printf(" - %s (%.0f%% confidence)\n", finding.Rule, finding.Confidence*100)
+			}
 		}
 	}
 	return nil

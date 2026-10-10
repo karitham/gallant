@@ -70,7 +70,7 @@ func TestEvaluate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
-	want := []eval.Finding{{Rule: "a.md", Confidence: 0.9}}
+	want := []eval.Finding{{Rule: "a.md", Confidence: 0.9}, {Rule: "b.md", Confidence: 0.1}}
 	if !reflect.DeepEqual(findings, want) {
 		t.Errorf("Evaluate() = %#v, want %#v", findings, want)
 	}
