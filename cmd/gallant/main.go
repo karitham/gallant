@@ -72,8 +72,12 @@ func run(rulesFS fs.FS, paths []string, model eval.Model) error {
 		if err != nil {
 			return err
 		}
+		if len(findings) == 0 {
+			continue
+		}
+		fmt.Println(f.Name())
 		for _, finding := range findings {
-			fmt.Printf("%s: %s\n", f.Name(), finding)
+			fmt.Printf(" - %s (%.0f%% confidence)\n", finding.Rule, finding.Confidence*100)
 		}
 	}
 	return nil

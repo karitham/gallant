@@ -70,8 +70,9 @@ func TestEvaluate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
-	if !reflect.DeepEqual(findings, []string{"a.md"}) {
-		t.Errorf("Evaluate() = %#v, want [a.md]", findings)
+	want := []eval.Finding{{Rule: "a.md", Confidence: 0.9}}
+	if !reflect.DeepEqual(findings, want) {
+		t.Errorf("Evaluate() = %#v, want %#v", findings, want)
 	}
 
 	capture := <-got

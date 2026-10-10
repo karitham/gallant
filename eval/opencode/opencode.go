@@ -47,7 +47,7 @@ var _ eval.Model = (*Client)(nil)
 
 // Evaluate implements eval.Model by asking the model, once per rule, whether
 // the file violates it.
-func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]string, error) {
+func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]eval.Finding, error) {
 	state, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
@@ -92,10 +92,10 @@ func (c *Client) Evaluate(file *os.File, rs []rules.Rule) ([]string, error) {
 		return nil, err
 	}
 
-	var findings []string
+	var findings []eval.Finding
 	for _, r := range rs {
 		if a, ok := res.Answers[r.Path]; ok && a.Noul > 0.5 {
-			findings = append(findings, r.Path)
+			findings = append(findings, eval.Finding{Rule: r.Path, Confidence: a.Noul})
 		}
 	}
 	return findings, nil
