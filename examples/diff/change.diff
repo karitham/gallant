@@ -1,0 +1,35 @@
+diff --git a/handler.go b/handler.go
+index 3f1a2b4..9c7d8e0 100644
+--- a/handler.go
++++ b/handler.go
+@@ -8,8 +8,11 @@ type Request struct {
+ func Handle(w http.ResponseWriter, r *http.Request) {
+ 	var req Request
++	fmt.Println("handling request") // debug
+ 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+ 		http.Error(w, err.Error(), http.StatusBadRequest)
+ 		return
+ 	}
++	// TODO: remove this
++	log.Printf("req = %+v", req)
+ 	w.Write([]byte("ok"))
+ }
+@@ -22,4 +25,6 @@ func Handle(w http.ResponseWriter, r *http.Request) {
+ // Close finishes the response.
+ func Close(w http.ResponseWriter) {
++	// w.WriteHeader(http.StatusOK)
++	_ = w
+ }
+diff --git a/config.go b/config.go
+index 1a2b3c4..5d6e7f8 100644
+--- a/config.go
++++ b/config.go
+@@ -1,6 +1,8 @@
+ package api
+ 
++// XXX revisit
+ func Read(path string) (*Config, error) {
++	fmt.Println("reading", path)
+ 	data, err := os.ReadFile(path)
+ 	if err != nil {
+ 		return nil, err
