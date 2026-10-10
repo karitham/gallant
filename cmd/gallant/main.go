@@ -105,7 +105,10 @@ func run(rulesFS fs.FS, paths []string, model eval.Model, includePassing, asJSON
 		return enc.Encode(records)
 	}
 	for _, r := range records {
-		fmt.Printf("%s %s %s %.0f%% %s\n", escape(r.File), escape(r.Rule), r.Type, r.Confidence*100, escape(r.Result))
+		// The result is the only free-text field, so it is the only one that
+		// can contain a newline or tab and need escaping.
+		result := strconv.Quote(r.Result)
+		fmt.Printf("%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, r.Confidence*100, result[1:len(result)-1])
 	}
 	return nil
 }
@@ -119,14 +122,6 @@ type record struct {
 	Type       string  `json:"type"`
 	Result     string  `json:"result"`
 	Confidence float64 `json:"confidence"`
-}
-
-// escape makes s safe to print on one line. It renders s as a quoted Go string
-// with the surrounding quotes removed, so backslashes, newlines, tabs, and other
-// control characters are escaped and the field never spans a line.
-func escape(s string) string {
-	quoted := strconv.Quote(s)
-	return quoted[1 : len(quoted)-1]
 }
 
 // resolveInputs expands path operands into open files, mirroring gofmt's
