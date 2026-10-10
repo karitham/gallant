@@ -44,6 +44,10 @@ The server truncates state that exceeds the checkpoint's context window (4,096
 tokens for the shipped checkpoints). Start it with `--strict-window` to reject
 an oversized file instead, which gallant reports as a per-file error.
 
+The server answers one request at a time, so gallant serialises evaluations for
+this provider. `--jobs` has no effect on throughput; files are still reported in
+order.
+
 - Base URL: `STRANDS_DECIDER_HOST`, default `http://127.0.0.1:8000`
 
 ```sh

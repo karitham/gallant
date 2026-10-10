@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/madxmike/gallant/eval"
 )
@@ -85,6 +87,48 @@ func TestListReadsHealth(t *testing.T) {
 	}
 	if want := []string{"hobson-2b-recipe"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("List() = %v, want %v", got, want)
+	}
+}
+
+// Evaluate must not let two evaluations reach the server at once: a Strands
+// Decider server faults on concurrent inference, so gallant's file-level
+// concurrency (--jobs) must not translate into overlapping requests.
+func TestEvaluateSerialisesRequests(t *testing.T) {
+	var (
+		mu          sync.Mutex
+		inflight    int
+		maxInflight int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		inflight++
+		if inflight > maxInflight {
+			maxInflight = inflight
+		}
+		mu.Unlock()
+
+		time.Sleep(20 * time.Millisecond)
+
+		mu.Lock()
+		inflight--
+		mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{}})
+	}))
+	defer srv.Close()
+
+	m := New(srv.URL, "strands-decider-2B-qwen3.5-v1-2610")
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.Evaluate(context.Background(), strings.NewReader("x"), nil)
+		}()
+	}
+	wg.Wait()
+
+	if maxInflight != 1 {
+		t.Errorf("max concurrent requests = %d, want 1", maxInflight)
 	}
 }
 

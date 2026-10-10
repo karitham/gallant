@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madxmike/gallant/eval"
@@ -30,6 +31,12 @@ const defaultHost = "http://127.0.0.1:8000"
 type Model struct {
 	client *systemone.Client
 	host   string
+
+	// mu serialises evaluations. A Strands Decider server runs one request at a
+	// time (a single worker owns the accelerator), and its Metal/CUDA backend
+	// faults on concurrent inference, so requests must not overlap however many
+	// files gallant evaluates at once.
+	mu sync.Mutex
 }
 
 // New returns a Model that evaluates with name on the Strands Decider server at
@@ -47,8 +54,10 @@ var (
 	_ eval.Lister = (*Model)(nil)
 )
 
-// Evaluate implements eval.Model.
+// Evaluate implements eval.Model. It serialises requests to the server.
 func (m *Model) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.client.Evaluate(ctx, r, rs)
 }
 
