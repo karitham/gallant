@@ -198,6 +198,10 @@ index 3333333..4444444 100644
 
 const noulRule = "---\nappliesTo: \"*.go\"\ntype: noul\n---\nno useless comments\n"
 
+// noulRuleConfident is noulRule with a raised minConfidence, so a finding below
+// 0.8 is not reported as a failure.
+const noulRuleConfident = "---\nappliesTo: \"*.go\"\ntype: noul\nminConfidence: 0.8\n---\nno useless comments\n"
+
 func TestDiffInputsSplitsPerFile(t *testing.T) {
 	inputs, err := diffInputs(strings.NewReader(exampleDiff), func(name string) bool {
 		return strings.HasSuffix(name, ".go")
@@ -255,6 +259,21 @@ func (echoModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 	findings := make([]eval.Finding, len(rs))
 	for i, rule := range rs {
 		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: 0.9}
+	}
+	return findings, nil
+}
+
+// confidentModel answers every noul rule with the same confidence, so a rule's
+// minConfidence can be shown to decide whether the finding is reported.
+type confidentModel struct{ confidence float64 }
+
+func (m confidentModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return nil, err
+	}
+	findings := make([]eval.Finding, len(rs))
+	for i, rule := range rs {
+		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: m.confidence}
 	}
 	return findings, nil
 }
@@ -384,6 +403,58 @@ func TestRunAssumeFilenameSelectsRules(t *testing.T) {
 	}
 	if got := out(); got != "" {
 		t.Errorf("output = %q, want none: the *.go rule does not match notes.txt", got)
+	}
+}
+
+func TestRunMinConfidenceSuppressesLowConfidence(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.7}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); got != "" {
+		t.Errorf("output = %q, want none: 0.7 is below the 0.8 threshold", got)
+	}
+}
+
+func TestRunMinConfidenceReportsAtThreshold(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.9}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
+		t.Errorf("output = %q, want a fail: 0.9 is above the 0.8 threshold", got)
+	}
+}
+
+func TestRunMinConfidenceShowsPassWhenAsked(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.7}, 1, true, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); !strings.Contains(got, "a.go comments.md noul 30% pass") {
+		t.Errorf("output = %q, want a pass at 30%%: below the threshold the finding is a pass", got)
+	}
+}
+
+func TestRunDefaultMinConfidenceReportsAboveMidpoint(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.6}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); !strings.Contains(got, "a.go comments.md noul 60% fail") {
+		t.Errorf("output = %q, want a fail: 0.6 is above the default 0.5", got)
 	}
 }
 

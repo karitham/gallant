@@ -58,6 +58,7 @@ func renderRules(rules []Rule) string {
 		fmt.Fprintf(&b, "appliesTo: %s\n", formatGlobs(r.AppliesTo))
 		fmt.Fprintf(&b, "type: %s\n", r.Type)
 		fmt.Fprintf(&b, "criteria: %s\n", formatCriteria(r.Criteria))
+		fmt.Fprintf(&b, "minConfidence: %g\n", r.MinConfidence)
 		fmt.Fprintf(&b, "body: %s\n", strconv.Quote(r.Body))
 	}
 	return b.String()

@@ -39,6 +39,10 @@ type Rule struct {
 	// Criteria is the options (choice) or levels (score) the decision is made
 	// from.
 	Criteria Criteria
+	// MinConfidence is the probability of a violation above which a noul is
+	// reported as failed. It applies to noul rules only; choice and score rules
+	// leave it zero. A noul that declares none defaults to 0.5.
+	MinConfidence float64
 	// Body is everything following the frontmatter, preserved verbatim.
 	Body string
 }
@@ -55,9 +59,10 @@ func Parse(data []byte) (Rule, error) {
 	}
 
 	var cfg struct {
-		AppliesTo globList `yaml:"appliesTo"`
-		Type      Type     `yaml:"type"`
-		Criteria  Criteria `yaml:"criteria"`
+		AppliesTo     globList `yaml:"appliesTo"`
+		Type          Type     `yaml:"type"`
+		Criteria      Criteria `yaml:"criteria"`
+		MinConfidence *float64 `yaml:"minConfidence"`
 	}
 	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
 		return Rule{}, err
@@ -76,11 +81,30 @@ func Parse(data []byte) (Rule, error) {
 		return Rule{}, fmt.Errorf("missing or invalid type %q", cfg.Type)
 	}
 
+	// A noul asks whether the file violates the rule, so its confidence is the
+	// probability of a violation and 0.5 is the midpoint above which a violation
+	// is reported. minConfidence raises that bar; the other types answer with a
+	// different confidence and have no such midpoint, so they reject the field.
+	minConfidence := 0.0
+	if cfg.Type == TypeNoul {
+		minConfidence = 0.5
+	}
+	if cfg.MinConfidence != nil {
+		if cfg.Type != TypeNoul {
+			return Rule{}, errors.New("minConfidence is only supported for type noul")
+		}
+		minConfidence = *cfg.MinConfidence
+		if minConfidence < 0 || minConfidence > 1 {
+			return Rule{}, fmt.Errorf("minConfidence must be between 0 and 1, got %v", minConfidence)
+		}
+	}
+
 	return Rule{
-		AppliesTo: cfg.AppliesTo,
-		Type:      cfg.Type,
-		Criteria:  cfg.Criteria,
-		Body:      body,
+		AppliesTo:     cfg.AppliesTo,
+		Type:          cfg.Type,
+		Criteria:      cfg.Criteria,
+		MinConfidence: minConfidence,
+		Body:          body,
 	}, nil
 }
 

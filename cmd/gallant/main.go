@@ -31,6 +31,11 @@ const defaultRulesDir = ".agents/gallant"
 // is dominated by network round trips, so this exceeds the CPU count.
 const defaultJobs = 8
 
+// defaultMinConfidence is the probability of a violation above which a noul is
+// reported as failed when its rule declares none. It is the same default rules
+// applies, used when a finding names a rule that was not loaded.
+const defaultMinConfidence = 0.5
+
 func main() {
 	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
 	model := flag.String("model", "", "model name")
@@ -93,6 +98,13 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 		return err
 	}
 
+	// minConfidence is indexed by rule path so a finding can recover the
+	// threshold its rule declared.
+	minConfidence := make(map[string]float64, len(loaded))
+	for _, r := range loaded {
+		minConfidence[r.Path] = r.MinConfidence
+	}
+
 	match := func(name string) bool {
 		return len(applicable(loaded, name)) > 0
 	}
@@ -126,7 +138,11 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 		for _, finding := range res.findings {
 			result, confidence := finding.Result, finding.Confidence
 			if finding.Type == rules.TypeNoul {
-				if finding.Confidence <= 0.5 {
+				min, ok := minConfidence[finding.Rule]
+				if !ok {
+					min = defaultMinConfidence
+				}
+				if finding.Confidence <= min {
 					if !includePassing {
 						continue
 					}

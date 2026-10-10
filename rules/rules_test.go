@@ -119,15 +119,49 @@ func TestParseScore(t *testing.T) {
 	}
 }
 
+func TestParseMinConfidence(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want float64
+	}{
+		"noul defaults to 0.5": {
+			src:  "---\ntype: noul\nappliesTo: \"*.go\"\n---\nbody\n",
+			want: 0.5,
+		},
+		"noul reads the declared value": {
+			src:  "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: 0.8\n---\nbody\n",
+			want: 0.8,
+		},
+		"choice leaves it unset": {
+			src:  "---\ntype: choice\ncriteria:\n  a: \"one\"\n---\nbody\n",
+			want: 0,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rule, err := Parse([]byte(tt.src))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if rule.MinConfidence != tt.want {
+				t.Errorf("MinConfidence = %v, want %v", rule.MinConfidence, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := map[string]string{
-		"not a mapping":      "---\nnot a key value line\n---\nbody\n",
-		"no frontmatter":     "Just a rule body.\n",
-		"unterminated":       "---\ntype: noul\nappliesTo: \"*.go\"\nno closing delimiter\n",
-		"missing type":       "---\nappliesTo: \"*.go\"\n---\nbody\n",
-		"unknown type":       "---\ntype: nope\n---\nbody\n",
-		"choice no criteria": "---\ntype: choice\n---\nbody\n",
-		"score no criteria":  "---\ntype: score\n---\nbody\n",
+		"not a mapping":            "---\nnot a key value line\n---\nbody\n",
+		"no frontmatter":           "Just a rule body.\n",
+		"unterminated":             "---\ntype: noul\nappliesTo: \"*.go\"\nno closing delimiter\n",
+		"missing type":             "---\nappliesTo: \"*.go\"\n---\nbody\n",
+		"unknown type":             "---\ntype: nope\n---\nbody\n",
+		"choice no criteria":       "---\ntype: choice\n---\nbody\n",
+		"score no criteria":        "---\ntype: score\n---\nbody\n",
+		"minConfidence above one":  "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: 1.5\n---\nbody\n",
+		"minConfidence below zero": "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: -0.1\n---\nbody\n",
+		"minConfidence on choice":  "---\ntype: choice\ncriteria:\n  a: \"one\"\nminConfidence: 0.8\n---\nbody\n",
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
