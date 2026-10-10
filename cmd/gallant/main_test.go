@@ -25,8 +25,8 @@ func TestResolveInputsExplicitFileAlwaysIncluded(t *testing.T) {
 	if len(paths) != 1 {
 		t.Fatalf("resolveInputs() returned %d paths, want 1", len(paths))
 	}
-	if got, want := paths[0], filepath.Join(dir, "notes.txt"); got != want {
-		t.Errorf("paths[0] = %q, want %q", got, want)
+	if got, want := paths[0].name, filepath.Join(dir, "notes.txt"); got != want {
+		t.Errorf("paths[0].name = %q, want %q", got, want)
 	}
 }
 
@@ -46,11 +46,11 @@ func TestResolveInputsDirectoryFiltersByMatch(t *testing.T) {
 	if len(paths) != 2 {
 		t.Fatalf("resolveInputs() returned %d paths, want 2", len(paths))
 	}
-	if got, want := paths[0], filepath.Join(dir, "a.go"); got != want {
-		t.Errorf("paths[0] = %q, want %q", got, want)
+	if got, want := paths[0].name, filepath.Join(dir, "a.go"); got != want {
+		t.Errorf("paths[0].name = %q, want %q", got, want)
 	}
-	if got, want := paths[1], filepath.Join(dir, "nested", "c.go"); got != want {
-		t.Errorf("paths[1] = %q, want %q", got, want)
+	if got, want := paths[1].name, filepath.Join(dir, "nested", "c.go"); got != want {
+		t.Errorf("paths[1].name = %q, want %q", got, want)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestEvaluatePassesReaderAndSelectedRules(t *testing.T) {
 	write(t, dir, "main.go", "package main")
 
 	model := &fakeModel{}
-	if _, err := evaluate(context.Background(), filepath.Join(dir, "main.go"), []rules.Rule{
+	if _, err := evaluate(context.Background(), fileInput(filepath.Join(dir, "main.go")), []rules.Rule{
 		{AppliesTo: []string{"*.go"}},
 		{AppliesTo: []string{"*.ts"}},
 	}, model); err != nil {
@@ -126,10 +126,10 @@ func TestEvaluateAllPreservesOrder(t *testing.T) {
 	write(t, dir, "a.go", "slow")
 	write(t, dir, "b.go", "fast")
 	write(t, dir, "c.go", "medium")
-	paths := []string{
-		filepath.Join(dir, "a.go"),
-		filepath.Join(dir, "b.go"),
-		filepath.Join(dir, "c.go"),
+	paths := []input{
+		fileInput(filepath.Join(dir, "a.go")),
+		fileInput(filepath.Join(dir, "b.go")),
+		fileInput(filepath.Join(dir, "c.go")),
 	}
 	model := &delayModel{delays: map[string]time.Duration{
 		"slow":   60 * time.Millisecond,
@@ -156,7 +156,7 @@ func TestEvaluateAllStopsOnError(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "a.go", "")
 	write(t, dir, "b.go", "")
-	paths := []string{filepath.Join(dir, "a.go"), filepath.Join(dir, "b.go")}
+	paths := []input{fileInput(filepath.Join(dir, "a.go")), fileInput(filepath.Join(dir, "b.go"))}
 
 	if _, err := evaluateAll(context.Background(), paths, []rules.Rule{{AppliesTo: []string{"*.go"}}}, errorModel{}, len(paths)); err == nil {
 		t.Fatal("evaluateAll() error = nil, want an error")

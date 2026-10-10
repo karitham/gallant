@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/signal"
@@ -94,7 +95,7 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, model eval.Model, j
 				}
 			}
 			records = append(records, record{
-				File:       inputs[i],
+				File:       inputs[i].name,
 				Rule:       finding.Rule,
 				Type:       string(finding.Type),
 				Result:     result,
@@ -129,10 +130,10 @@ type record struct {
 }
 
 // evaluateAll evaluates every input, up to jobs at a time, returning each
-// input's findings indexed by its position in paths. Output is assembled in
+// input's findings indexed by its position in inputs. Output is assembled in
 // input order regardless of the order evaluations finish. The first error, or
 // ctx cancellation, stops further dispatch and cancels in-flight work.
-func evaluateAll(ctx context.Context, paths []string, all []rules.Rule, model eval.Model, jobs int) ([][]eval.Finding, error) {
+func evaluateAll(ctx context.Context, inputs []input, all []rules.Rule, model eval.Model, jobs int) ([][]eval.Finding, error) {
 	if jobs < 1 {
 		jobs = 1
 	}
@@ -140,7 +141,7 @@ func evaluateAll(ctx context.Context, paths []string, all []rules.Rule, model ev
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results := make([][]eval.Finding, len(paths))
+	results := make([][]eval.Finding, len(inputs))
 	sem := make(chan struct{}, jobs)
 	var (
 		wg       sync.WaitGroup
@@ -149,17 +150,17 @@ func evaluateAll(ctx context.Context, paths []string, all []rules.Rule, model ev
 	)
 
 dispatch:
-	for i, path := range paths {
+	for i, in := range inputs {
 		select {
 		case <-ctx.Done():
 			break dispatch
 		case sem <- struct{}{}:
 		}
 		wg.Add(1)
-		go func(i int, path string) {
+		go func(i int, in input) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			findings, err := evaluate(ctx, path, all, model)
+			findings, err := evaluate(ctx, in, all, model)
 			if err != nil {
 				mu.Lock()
 				if firstErr == nil {
@@ -170,7 +171,7 @@ dispatch:
 				return
 			}
 			results[i] = findings
-		}(i, path)
+		}(i, in)
 	}
 	wg.Wait()
 
@@ -183,17 +184,17 @@ dispatch:
 	return results, nil
 }
 
-// evaluate opens path, hands the model a reader for its contents along with the
-// rules whose globs match its name, and closes it. The descriptor lives only for
-// the duration of the call, so the model never sees a file and a large tree never
-// holds one descriptor per file.
-func evaluate(ctx context.Context, path string, all []rules.Rule, model eval.Model) ([]eval.Finding, error) {
-	f, err := os.Open(path)
+// evaluate opens in and hands the model a reader for its contents along with the
+// rules whose globs match its name, then closes it. Content is opened only for
+// the duration of the call, so the model never sees a file and a large tree
+// never holds one descriptor per file.
+func evaluate(ctx context.Context, in input, all []rules.Rule, model eval.Model) ([]eval.Finding, error) {
+	r, err := in.open()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	return model.Evaluate(ctx, f, applicable(all, filepath.Base(path)))
+	defer r.Close()
+	return model.Evaluate(ctx, r, applicable(all, filepath.Base(in.name)))
 }
 
 // applicable returns the rules whose globs match name.
@@ -207,13 +208,29 @@ func applicable(all []rules.Rule, name string) []rules.Rule {
 	return matched
 }
 
-// resolveInputs expands path operands into matching file paths, mirroring
+// input is one unit of evaluation: the name used to match rules and to report
+// the finding, and a function that opens its content. Opening is deferred until
+// evaluate runs, so a large tree never holds one descriptor per file.
+type input struct {
+	name string
+	open func() (io.ReadCloser, error)
+}
+
+// fileInput is an input whose content is read from path on disk.
+func fileInput(path string) input {
+	return input{
+		name: path,
+		open: func() (io.ReadCloser, error) { return os.Open(path) },
+	}
+}
+
+// resolveInputs expands path operands into matching file inputs, mirroring
 // gofmt's operand handling. An explicit file operand is always included; a
 // directory operand is walked and each file within it is included only when
 // match reports true for its name. Files are opened lazily by evaluate, not
 // here, so a large tree does not hold one descriptor per file.
-func resolveInputs(paths []string, match func(name string) bool) ([]string, error) {
-	var files []string
+func resolveInputs(paths []string, match func(name string) bool) ([]input, error) {
+	var inputs []input
 	for _, p := range paths {
 		err := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -225,14 +242,14 @@ func resolveInputs(paths []string, match func(name string) bool) ([]string, erro
 			if path != p && match != nil && !match(d.Name()) {
 				return nil
 			}
-			files = append(files, path)
+			inputs = append(inputs, fileInput(path))
 			return nil
 		})
 		if err != nil {
 			return nil, err
 		}
 	}
-	return files, nil
+	return inputs, nil
 }
 
 func fail(err error) {
