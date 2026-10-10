@@ -62,11 +62,11 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 		case r.Criteria.Levels != nil:
 			criteria = r.Criteria.Levels
 		}
-		questions[r.Path] = question{Type: string(r.Type), Instructions: r.Instructions(), Criteria: criteria}
+		questions[r.Path] = question{Type: r.Type, Instructions: r.Instructions(), Criteria: criteria}
 	}
 
 	body, err := json.Marshal(request{
-		Model:     string(c.model),
+		Model:     c.model,
 		State:     string(state),
 		Questions: questions,
 	})
@@ -123,15 +123,15 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 }
 
 type request struct {
-	Model     string              `json:"model"`
+	Model     Model               `json:"model"`
 	State     string              `json:"state"`
 	Questions map[string]question `json:"questions"`
 }
 
 type question struct {
-	Type         string `json:"type"`
-	Instructions string `json:"instructions"`
-	Criteria     any    `json:"criteria,omitempty"`
+	Type         rules.Type `json:"type"`
+	Instructions string     `json:"instructions"`
+	Criteria     any        `json:"criteria,omitempty"`
 }
 
 type response struct {
@@ -141,11 +141,11 @@ type response struct {
 // answer is the response for one question. Noul is the probability that the
 // question is true; Choice is the chosen option; Score is the chosen level.
 type answer struct {
-	Type       string  `json:"type"`
-	Noul       float64 `json:"noul"`
-	Choice     string  `json:"choice"`
-	Score      float64 `json:"score"`
-	Confidence float64 `json:"confidence"`
+	Type       rules.Type `json:"type"`
+	Noul       float64    `json:"noul"`
+	Choice     string     `json:"choice"`
+	Score      float64    `json:"score"`
+	Confidence float64    `json:"confidence"`
 }
 
 func init() {

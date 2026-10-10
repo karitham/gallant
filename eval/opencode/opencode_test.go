@@ -72,7 +72,7 @@ func TestEvaluate(t *testing.T) {
 	if capture.auth != "Bearer secret" {
 		t.Errorf("Authorization = %q, want %q", capture.auth, "Bearer secret")
 	}
-	if capture.req.Model != string(Jev113Free) {
+	if capture.req.Model != Jev113Free {
 		t.Errorf("model = %q, want %q", capture.req.Model, Jev113Free)
 	}
 	if capture.req.State != "package main" {

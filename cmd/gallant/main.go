@@ -117,7 +117,7 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 			records = append(records, record{
 				File:       inputs[i].name,
 				Rule:       finding.Rule,
-				Type:       string(finding.Type),
+				Type:       finding.Type,
 				Result:     result,
 				Confidence: confidence,
 			})
@@ -142,11 +142,11 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 // Result: for a noul it is the probability of the reported pass or fail, and for
 // a choice or score it is the model's confidence in the chosen option or level.
 type record struct {
-	File       string  `json:"file"`
-	Rule       string  `json:"rule"`
-	Type       string  `json:"type"`
-	Result     string  `json:"result"`
-	Confidence float64 `json:"confidence"`
+	File       string     `json:"file"`
+	Rule       string     `json:"rule"`
+	Type       rules.Type `json:"type"`
+	Result     string     `json:"result"`
+	Confidence float64    `json:"confidence"`
 }
 
 // evaluateAll evaluates every input, up to jobs at a time, returning each
