@@ -92,6 +92,14 @@ A file that cannot be evaluated — for example, one too large for the model's
 request limit — is reported on standard error as `gallant: <file>: <reason>`. The
 remaining files are still evaluated, and the run exits nonzero.
 
+## Limitations
+
+Decision models as of writing (10/10/2026) have relatively small input context windows (orders of a couple hundred to a couple thousand tokens). Some hosted models have larger contexts, but you should expect rejections if the file you are linting is too large. 
+
+If you are facing this you may chunk the file yourself into relevant, smaller, pieces. Gallant does not do this itself, but you can pass arbitrary input from stdin (See Usage above). 
+
+These models are only now becoming mainstream, but are seeing rapid development. The hope is that new models will allow bigger inputs soon enough (as we saw with LLMs). 
+
 ## Status
 
 Gallant is under active development.
