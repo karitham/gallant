@@ -14,7 +14,7 @@ import (
 	"path"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
 )
 
 // Type is a rule's decision type.
@@ -59,22 +59,34 @@ func Parse(data []byte) (Rule, error) {
 	}
 
 	var cfg struct {
-		AppliesTo     globList `yaml:"appliesTo"`
-		Type          Type     `yaml:"type"`
-		Criteria      Criteria `yaml:"criteria"`
-		MinConfidence *float64 `yaml:"minConfidence"`
+		AppliesTo     globList        `yaml:"appliesTo"`
+		Type          Type            `yaml:"type"`
+		Criteria      yaml.RawMessage `yaml:"criteria"`
+		MinConfidence *float64        `yaml:"minConfidence"`
 	}
 	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
 		return Rule{}, err
 	}
+
+	// The declared type fixes the shape of criteria: a choice's options are a
+	// mapping, a score's levels are a list. So the type is decoded with the rest
+	// of the frontmatter first, then criteria is decoded into the shape it
+	// implies.
+	var criteria Criteria
 	switch cfg.Type {
 	case TypeNoul:
 	case TypeChoice:
-		if len(cfg.Criteria.Options) == 0 {
+		if err := yaml.Unmarshal(cfg.Criteria, &criteria.Options); err != nil {
+			return Rule{}, err
+		}
+		if len(criteria.Options) == 0 {
 			return Rule{}, errors.New("type choice requires criteria options")
 		}
 	case TypeScore:
-		if len(cfg.Criteria.Levels) == 0 {
+		if err := yaml.Unmarshal(cfg.Criteria, &criteria.Levels); err != nil {
+			return Rule{}, err
+		}
+		if len(criteria.Levels) == 0 {
 			return Rule{}, errors.New("type score requires criteria levels")
 		}
 	default:
@@ -110,7 +122,7 @@ func Parse(data []byte) (Rule, error) {
 	return Rule{
 		AppliesTo:     cfg.AppliesTo,
 		Type:          cfg.Type,
-		Criteria:      cfg.Criteria,
+		Criteria:      criteria,
 		MinConfidence: minConfidence,
 		Body:          body,
 	}, nil

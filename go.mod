@@ -2,4 +2,4 @@ module github.com/madxmike/gallant
 
 go 1.27.2
 
-require gopkg.in/yaml.v3 v3.0.1
+require github.com/goccy/go-yaml v1.19.2

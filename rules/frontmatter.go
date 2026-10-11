@@ -2,10 +2,7 @@ package rules
 
 import (
 	"errors"
-	"fmt"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 const frontmatterDelimiter = "---"
@@ -22,27 +19,20 @@ var (
 // globList accepts either a single glob string or a list of them.
 type globList []string
 
-func (g *globList) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
-	case yaml.ScalarNode:
-		var s string
-		if err := value.Decode(&s); err != nil {
-			return err
-		}
-		if s != "" {
-			*g = globList{s}
-		}
+func (g *globList) UnmarshalYAML(unmarshal func(any) error) error {
+	var patterns []string
+	if err := unmarshal(&patterns); err == nil {
+		*g = patterns
 		return nil
-	case yaml.SequenceNode:
-		var items []string
-		if err := value.Decode(&items); err != nil {
-			return err
-		}
-		*g = items
-		return nil
-	default:
-		return fmt.Errorf("appliesTo: expected a string or a list of strings")
 	}
+	var pattern string
+	if err := unmarshal(&pattern); err == nil {
+		if pattern != "" {
+			*g = globList{pattern}
+		}
+		return nil
+	}
+	return errors.New("appliesTo: expected a string or a list of strings")
 }
 
 // Criteria is the set of options or levels a rule's question is answered from:
@@ -51,17 +41,6 @@ func (g *globList) UnmarshalYAML(value *yaml.Node) error {
 type Criteria struct {
 	Options map[string]string
 	Levels  []string
-}
-
-func (c *Criteria) UnmarshalYAML(value *yaml.Node) error {
-	switch value.Kind {
-	case yaml.MappingNode:
-		return value.Decode(&c.Options)
-	case yaml.SequenceNode:
-		return value.Decode(&c.Levels)
-	default:
-		return fmt.Errorf("criteria must be a mapping or a list")
-	}
 }
 
 // splitFrontmatter separates a frontmatter block from the markdown body. A block
