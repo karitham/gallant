@@ -1,3 +1,5 @@
+![The Gallant gopher](assets/gopher-zorro.svg)
+
 # gallant
 
 Gallant is a customizable linter built to utilize Decision Models (i.e. Jev, Clef, and other system one models) to lint your code, documents, and any other text-based files.
@@ -75,3 +77,9 @@ Gallant does not emit telemetry, log, or attempt to obtain any additional inform
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Credits
+
+The gopher logo used in this project is from [egonelbre/gophers](https://github.com/egonelbre/gophers).
+
+The Go gopher was designed by Renee French. Read http://blog.golang.org/gopher for more details.
