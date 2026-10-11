@@ -79,8 +79,8 @@ func init() {
 		Name:      "strands-decider",
 		URLEnvVar: "STRANDS_DECIDER_HOST",
 		Default:   "strands-decider-2B-qwen3.5-v1-2610",
-		New: func(_, host, model string) eval.Model {
-			return New(host, model)
+		New: func(_, host, model string) (eval.Model, error) {
+			return New(host, model), nil
 		},
 	})
 }

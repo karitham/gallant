@@ -15,8 +15,10 @@ type Provider struct {
 	Default   string
 	// New builds a Model from the API key and base URL read from the provider's
 	// environment variables, and the selected model name. A provider ignores the
-	// values it does not use.
-	New func(apiKey, host, model string) Model
+	// values it does not use. It returns an error when a requirement is unmet,
+	// such as a model that needs an API key when none is set, so the problem is
+	// reported once before any file is evaluated.
+	New func(apiKey, host, model string) (Model, error)
 }
 
 var providers = map[string]Provider{}

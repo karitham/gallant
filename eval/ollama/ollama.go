@@ -73,8 +73,8 @@ func init() {
 		Name:      "ollama",
 		URLEnvVar: "OLLAMA_HOST",
 		Default:   "nimble",
-		New: func(_, host, model string) eval.Model {
-			return New(host, model)
+		New: func(_, host, model string) (eval.Model, error) {
+			return New(host, model), nil
 		},
 	})
 }

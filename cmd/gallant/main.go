@@ -95,7 +95,10 @@ func main() {
 	if *model == "" {
 		*model = p.Default
 	}
-	m := p.New(os.Getenv(p.KeyEnvVar), os.Getenv(p.URLEnvVar), *model)
+	m, err := p.New(os.Getenv(p.KeyEnvVar), os.Getenv(p.URLEnvVar), *model)
+	if err != nil {
+		fail(err)
+	}
 
 	// A model may offer a discovery endpoint, in which case the model set is
 	// read at startup rather than declared. When discovery fails the model name
