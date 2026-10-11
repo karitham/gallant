@@ -3,46 +3,46 @@ appliesTo: ["*.md"]
 type: noul
 criteria: []
 minConfidence: 0.5
-body: "\n# Title\n\n---\n\nMore text.\n"
+body: "\n# Descriptive links\n\nA link must describe where it goes, not paste the address.\n\n---\n\nReport a violation when a link shows the raw URL instead of a description.\n"
 
 path: go-style.md
 appliesTo: ["*.go"]
 type: noul
 criteria: []
 minConfidence: 0.8
-body: "# Go style\n\nPrefer early returns.\n"
+body: "# Exported declarations need doc comments\n\nReport a violation when an exported declaration has no doc comment.\n"
 
 path: inline.md
 appliesTo: ["*.sql", "*.ddl"]
 type: noul
 criteria: []
 minConfidence: 0.5
-body: "Use transactions.\n"
+body: "# No unbounded deletes\n\nReport a violation when a `DELETE` or `UPDATE` statement has no `WHERE` clause.\n"
 
 path: nested/typescript.md
 appliesTo: ["*.ts", "*.tsx"]
 type: noul
 criteria: []
 minConfidence: 0.5
-body: "Keep types explicit.\n"
+body: "# No any\n\nReport a violation when a type is written as `any`. Use a specific type, or\n`unknown` when the type is truly not known yet.\n"
 
 path: readability.md
 appliesTo: ["*.md"]
 type: score
 criteria: ["Easy to read", "Somewhat hard", "Very hard"]
 minConfidence: 0
-body: "Rate how hard the document is to read.\n"
+body: "# Readability\n\nRate how hard this document is to read. Think about sentence length, jargon, and\nhow much a reader must hold in mind.\n"
 
 path: severity.md
 appliesTo: ["*.md"]
 type: choice
 criteria: {compliant: "The document follows the rule.", violation: "The document breaks the rule."}
 minConfidence: 0
-body: "Judge how the document relates to the rule.\n"
+body: "# Headings step down one level\n\nJudge whether the document keeps its heading levels in order. A heading must not\nskip a level, for example an `h3` directly after an `h1`.\n"
 
 path: windows.md
 appliesTo: ["*.rb"]
 type: noul
 criteria: []
 minConfidence: 0.5
-body: "Use frozen string literals.\r\n"
+body: "# Mutable string literals\r\n\r\nReport a violation when the file mutates a string literal, for example with\r\n`sub!` or `<<`.\r\n"

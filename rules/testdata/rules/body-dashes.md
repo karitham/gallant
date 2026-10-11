@@ -3,8 +3,10 @@ appliesTo: "*.md"
 type: noul
 ---
 
-# Title
+# Descriptive links
+
+A link must describe where it goes, not paste the address.
 
 ---
 
-More text.
+Report a violation when a link shows the raw URL instead of a description.

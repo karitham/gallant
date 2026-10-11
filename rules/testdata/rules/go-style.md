@@ -3,6 +3,6 @@ appliesTo: "*.go"
 type: noul
 minConfidence: 0.8
 ---
-# Go style
+# Exported declarations need doc comments
 
-Prefer early returns.
+Report a violation when an exported declaration has no doc comment.

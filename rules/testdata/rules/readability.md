@@ -6,4 +6,7 @@ criteria:
   - "Somewhat hard"
   - "Very hard"
 ---
-Rate how hard the document is to read.
+# Readability
+
+Rate how hard this document is to read. Think about sentence length, jargon, and
+how much a reader must hold in mind.

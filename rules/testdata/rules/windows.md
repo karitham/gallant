@@ -2,4 +2,7 @@
 appliesTo: "*.rb"
 type: noul
 ---
-Use frozen string literals.
+# Mutable string literals
+
+Report a violation when the file mutates a string literal, for example with
+`sub!` or `<<`.
