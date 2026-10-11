@@ -70,6 +70,21 @@ be installed:
 OPENCODE_API_KEY=... vhs examples/ste100/.vhs/demo.tape
 ```
 
+#### Fuzzing the Parsers
+
+The hand-rolled parsers (rule frontmatter, diff splitting, and the error-body
+snippet) have fuzz targets. Fuzzing is not run automatically; run one directly:
+
+```sh
+go test ./rules -fuzz FuzzParse -fuzztime 30s
+go test ./rules -fuzz FuzzSplitFrontmatter -fuzztime 30s
+go test ./cmd/gallant -fuzz FuzzDiffInputs -fuzztime 30s
+go test ./eval/systemone -fuzz FuzzBodySuffix -fuzztime 30s
+```
+
+A failing input is written under `testdata/fuzz` and can be committed as a
+regression seed.
+
 ## Privacy
 
 Gallant does not emit telemetry, log, or attempt to obtain any additional information than what you provide as input. As gallant interfaces with hosted providers of your chosing it will pass information you give to these providers in order to perform lint evalautations. See your chosen provider's privacy policy. 
