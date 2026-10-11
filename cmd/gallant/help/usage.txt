@@ -32,12 +32,18 @@ Options:
   -h, --help              print this help and exit
 
 Output:
-  One line per answer, space-separated:
+  gallant prints one finding per line in a fixed, space-separated format:
 
     <file> <rule> <type> <confidence> <result>
 
-  With --json, gallant prints an array of objects instead. A file that cannot be
-  checked is reported on standard error, and it does not stop the other files.
+  The format is line-oriented: every newline is escaped, so one finding stays on
+  one line. For machine consumption, --json prints an array of objects instead:
+
+    gallant --json
+
+  A file that cannot be checked (for example, one too large for the model) is
+  reported on standard error as "gallant: <file>: <reason>". The other files are
+  still checked, and the run exits nonzero.
 
 Exit status:
   0    all checks ran
@@ -55,4 +61,3 @@ Examples:
 Help topics:
   gallant --help rules      the rule format
   gallant --help providers  the provider list
-  gallant --help output     the output format

@@ -56,8 +56,6 @@ func main() {
 				printRulesHelp(os.Stdout)
 			case "providers":
 				printProvidersHelp(os.Stdout)
-			case "output":
-				printOutputHelp(os.Stdout)
 			default:
 				printUsage(os.Stdout)
 			}

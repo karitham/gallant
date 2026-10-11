@@ -17,7 +17,6 @@ func printMan(w io.Writer) {
 		{"USAGE", usageText},
 		{"RULES", rulesHelpText},
 		{"PROVIDERS", providersHelpText},
-		{"OUTPUT", outputHelpText},
 	} {
 		fmt.Fprintf(w, ".SH %s\n.nf\n", s.title)
 		io.WriteString(w, roffEscape(s.body))
