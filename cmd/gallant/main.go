@@ -81,7 +81,7 @@ func main() {
 			flag.Usage()
 			os.Exit(2)
 		}
-		fail(err)
+		usageFail(err)
 	}
 
 	p, ok := eval.Lookup(*provider)
@@ -104,7 +104,7 @@ func main() {
 		names, err := lister.List(ctx)
 		switch {
 		case err != nil:
-			fmt.Fprintf(os.Stderr, "gallant: %s: cannot list models: %v; passing --model through\n", p.Name, err)
+			fmt.Fprintf(os.Stderr, "gallant: %s: cannot list models: %v; using --model %q\n", p.Name, err, *model)
 		case len(names) > 0 && !slices.Contains(names, *model):
 			fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(names, ", ")))
 		}
@@ -112,7 +112,7 @@ func main() {
 		fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(p.Models, ", ")))
 	}
 
-	if _, err := os.Stat(*rulesDir); err != nil {
+	if err := checkRulesDir(*rulesDir); err != nil {
 		fail(err)
 	}
 
@@ -274,12 +274,18 @@ dispatch:
 // the duration of the call, so the model never sees a file and a large tree
 // never holds one descriptor per file.
 func evaluate(ctx context.Context, in input, all []rules.Rule, model eval.Model) ([]eval.Finding, error) {
+	matched := applicable(all, filepath.Base(in.name))
+	if len(matched) == 0 {
+		// Nothing to check, so do not open the file or bother the model. An
+		// explicit file operand is always included, even when no rule matches it.
+		return nil, nil
+	}
 	r, err := in.open()
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
-	return model.Evaluate(ctx, r, applicable(all, filepath.Base(in.name)))
+	return model.Evaluate(ctx, r, matched)
 }
 
 // applicable returns the rules whose globs match name.
@@ -340,7 +346,7 @@ func resolveInputs(paths []string, match func(name string) bool) ([]input, error
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, unwrapPath(err)
 		}
 	}
 	return inputs, nil
@@ -364,7 +370,7 @@ func diffInputs(r io.Reader, match func(name string) bool) ([]input, error) {
 		// git show output.
 		i := strings.Index(text, "\ndiff --git ")
 		if i < 0 {
-			return nil, nil
+			return nil, errNoDiff
 		}
 		text = text[i+1:]
 	}
@@ -402,6 +408,10 @@ func namedInput(name string, r io.Reader) ([]input, error) {
 // errNoInput reports a bare invocation: no path operands and no stdin mode.
 var errNoInput = errors.New("no input")
 
+// errNoDiff reports stdin that carried no unified diff at all, as opposed to a
+// diff in which no file matched a rule.
+var errNoDiff = errors.New("no diff found on stdin (--diff expects unified diff output)")
+
 // validateInputs rejects flag and operand combinations that name no input or
 // more than one source of input.
 func validateInputs(diff bool, assumeFilename string, args []string) error {
@@ -418,6 +428,34 @@ func validateInputs(diff bool, assumeFilename string, args []string) error {
 	return nil
 }
 
+// checkRulesDir reports a missing or unreadable rules directory in terms a user
+// can act on, rather than the raw stat error.
+func checkRulesDir(dir string) error {
+	_, err := os.Stat(dir)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("rules directory %q does not exist (create it, or pass --rules)", dir)
+	default:
+		return unwrapPath(err)
+	}
+}
+
+// unwrapPath renders a PathError without the syscall name it carries, so a
+// diagnostic reads "<path>: no such file or directory" rather than the
+// internal "lstat <path>: no such file or directory".
+func unwrapPath(err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return fmt.Errorf("%s: %w", pe.Path, pe.Err)
+	}
+	return err
+}
+
+// fail reports err on stderr and exits nonzero. Diagnostics never go to stdout,
+// so a consumer reading findings from a pipe sees only findings; an interrupt
+// keeps the shell's conventional 130.
 func fail(err error) {
 	if errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "gallant: interrupted")
@@ -425,4 +463,11 @@ func fail(err error) {
 	}
 	fmt.Fprintln(os.Stderr, "gallant:", err)
 	os.Exit(1)
+}
+
+// usageFail reports a command-line misuse on stderr and exits 2, the status a
+// bad invocation conventionally uses.
+func usageFail(err error) {
+	fmt.Fprintln(os.Stderr, "gallant:", err)
+	os.Exit(2)
 }

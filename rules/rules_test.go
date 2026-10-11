@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -169,6 +170,17 @@ func TestParseErrors(t *testing.T) {
 				t.Fatal("Parse() error = nil, want error")
 			}
 		})
+	}
+}
+
+func TestParseFrontmatterErrors(t *testing.T) {
+	// A rule with no leading delimiter and one whose delimiter is never closed
+	// are different mistakes, so they report different errors.
+	if _, err := Parse([]byte("Just a rule body.\n")); !errors.Is(err, errNoFrontmatter) {
+		t.Errorf("Parse(no frontmatter) error = %v, want errNoFrontmatter", err)
+	}
+	if _, err := Parse([]byte("---\ntype: noul\n")); !errors.Is(err, errUnclosedFrontmatter) {
+		t.Errorf("Parse(unclosed) error = %v, want errUnclosedFrontmatter", err)
 	}
 }
 

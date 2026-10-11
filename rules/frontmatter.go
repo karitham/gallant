@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,15 @@ import (
 )
 
 const frontmatterDelimiter = "---"
+
+var (
+	// errNoFrontmatter reports a rule that does not begin with a frontmatter
+	// block at all.
+	errNoFrontmatter = errors.New("missing frontmatter: a rule must begin with a --- block")
+	// errUnclosedFrontmatter reports an opening "---" line with no matching
+	// closing line, so a rule author can tell it apart from a missing block.
+	errUnclosedFrontmatter = errors.New("unclosed frontmatter: no closing ---")
+)
 
 // globList accepts either a single glob string or a list of them.
 type globList []string
@@ -54,28 +64,28 @@ func (c *Criteria) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-// splitFrontmatter separates an optional frontmatter block from the markdown
-// body. The boolean result reports whether a frontmatter block was found.
+// splitFrontmatter separates a frontmatter block from the markdown body. A block
+// is only recognised when the very first line is exactly the delimiter; it ends
+// at the next line that is exactly the delimiter (ignoring a trailing "\r").
+// The body is everything after that closing delimiter, preserved verbatim.
 //
-// A block is only recognised when the very first line is exactly the delimiter.
-// It ends at the next line that is exactly the delimiter (ignoring a trailing
-// "\r"). The body is everything after that closing delimiter, preserved
-// verbatim. If the delimiter is missing or never closed, the whole input is
-// returned as the body.
-func splitFrontmatter(src string) (fm, body string, ok bool) {
+// It reports errNoFrontmatter when the input does not begin with the delimiter
+// and errUnclosedFrontmatter when the opening delimiter is never closed, so a
+// rule author can tell the two mistakes apart.
+func splitFrontmatter(src string) (fm, body string, err error) {
 	line, next := readLine(src, 0)
 	if strings.TrimRight(line, "\r") != frontmatterDelimiter {
-		return "", src, false
+		return "", src, errNoFrontmatter
 	}
 
 	contentStart := next
 	for pos := next; ; {
 		if pos >= len(src) {
-			return "", src, false
+			return "", src, errUnclosedFrontmatter
 		}
 		line, next = readLine(src, pos)
 		if strings.TrimRight(line, "\r") == frontmatterDelimiter {
-			return src[contentStart:pos], src[next:], true
+			return src[contentStart:pos], src[next:], nil
 		}
 		pos = next
 	}

@@ -49,13 +49,13 @@ type Rule struct {
 
 // Parse parses a single rule from raw markdown file contents.
 //
-// Frontmatter is optional. When present it must begin on the first line and be
-// delimited by lines containing exactly "---". The body is returned verbatim,
-// including any leading or trailing blank lines.
+// Frontmatter is required. It must begin on the first line and be delimited by
+// lines containing exactly "---". The body is returned verbatim, including any
+// leading or trailing blank lines.
 func Parse(data []byte) (Rule, error) {
-	fm, body, ok := splitFrontmatter(string(data))
-	if !ok {
-		return Rule{}, errors.New("missing frontmatter")
+	fm, body, err := splitFrontmatter(string(data))
+	if err != nil {
+		return Rule{}, err
 	}
 
 	var cfg struct {

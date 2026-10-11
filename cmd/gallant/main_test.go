@@ -107,6 +107,18 @@ func TestEvaluatePassesReaderAndSelectedRules(t *testing.T) {
 	}
 }
 
+func TestEvaluateSkipsWhenNoRulesApplied(t *testing.T) {
+	// An explicit file operand is always included, but when no rule applies to it
+	// there is nothing to check, so the model is never called.
+	model := &fakeModel{}
+	if _, err := evaluate(context.Background(), textInput("notes.txt", "hi"), []rules.Rule{{AppliesTo: []string{"*.go"}}}, model); err != nil {
+		t.Fatalf("evaluate() error = %v", err)
+	}
+	if model.content != "" || model.rules != nil {
+		t.Errorf("model called with content %q, rules %#v; want no call when no rule applies", model.content, model.rules)
+	}
+}
+
 // fakeModel reads the whole stream at evaluate time, as a real model does.
 type fakeModel struct {
 	content string
@@ -488,6 +500,28 @@ func TestRunReportsFailedFileAndContinues(t *testing.T) {
 	}
 }
 
+func TestCheckRulesDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := checkRulesDir(dir); err != nil {
+		t.Errorf("checkRulesDir(existing) error = %v, want nil", err)
+	}
+	err := checkRulesDir(filepath.Join(dir, "missing"))
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("checkRulesDir(missing) error = %v, want a message that it does not exist", err)
+	}
+}
+
+func TestUnwrapPathDropsSyscallName(t *testing.T) {
+	_, err := os.Stat(filepath.Join(t.TempDir(), "missing"))
+	got := unwrapPath(err).Error()
+	if strings.Contains(got, "stat ") || strings.Contains(got, "lstat ") {
+		t.Errorf("unwrapPath() = %q, want no syscall name", got)
+	}
+	if !strings.HasSuffix(got, "no such file or directory") {
+		t.Errorf("unwrapPath() = %q, want the underlying cause preserved", got)
+	}
+}
+
 func TestValidateInputs(t *testing.T) {
 	tests := map[string]struct {
 		diff           bool
@@ -561,8 +595,8 @@ func TestDiffInputsSkipsLeadingHeader(t *testing.T) {
 
 func TestDiffInputsNonDiff(t *testing.T) {
 	inputs, err := diffInputs(strings.NewReader("just some text\n"), func(string) bool { return true })
-	if err != nil {
-		t.Fatalf("diffInputs() error = %v", err)
+	if !errors.Is(err, errNoDiff) {
+		t.Fatalf("diffInputs() error = %v, want errNoDiff", err)
 	}
 	if len(inputs) != 0 {
 		t.Errorf("diffInputs() = %#v, want none for non-diff input", inputs)
