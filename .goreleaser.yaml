@@ -35,6 +35,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - man/gallant.1
 
 checksum:
   name_template: checksums.txt

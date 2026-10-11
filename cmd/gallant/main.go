@@ -62,6 +62,9 @@ func main() {
 				printUsage(os.Stdout)
 			}
 			return
+		case "--man":
+			printMan(os.Stdout)
+			return
 		}
 	}
 

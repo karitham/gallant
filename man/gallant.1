@@ -1,0 +1,201 @@
+.TH GALLANT 1
+.SH NAME
+gallant \- check files against rules with a decision model
+.SH USAGE
+.nf
+gallant - check files against rules with a decision model
+
+Usage:
+  gallant [options] path...
+  gallant [options] --diff
+  gallant [options] --assume-filename name
+
+Description:
+  gallant checks files against rules. A rule gives one question to a decision
+  model, and gallant prints one line for each answer. Rules are markdown files
+  in .agents/gallant.
+
+Input:
+  With no --diff or --assume-filename, gallant checks the files and directories
+  you name. An explicit file is always checked. A directory is walked, and each
+  file whose name matches a rule is checked.
+
+  --diff reads a unified diff from standard input and checks each changed file.
+  --assume-filename reads one file from standard input and names it, so a pipe
+  can stand in for a file. The two options are mutually exclusive and take no
+  path operands.
+
+Options:
+  --provider name         model provider (default "opencode")
+  --model name            model name (default from the provider)
+  --rules dir             directory of lint rules (default ".agents/gallant")
+  --jobs n                files to check concurrently (default 8)
+  --include-passing       also print the rules the file passes
+  --json                  print the answers as a JSON array
+  --diff                  check a unified diff read from standard input
+  --assume-filename name  check one file read from standard input under this name
+  -h, --help              print this help and exit
+
+Output:
+  One line per answer, space-separated:
+
+    <file> <rule> <type> <confidence> <result>
+
+  With --json, gallant prints an array of objects instead. A file that cannot be
+  checked is reported on standard error, and it does not stop the other files.
+
+Exit status:
+  0    all checks ran
+  1    an error stopped the run
+  2    no input
+  130  the run was interrupted
+
+Examples:
+  gallant .
+  gallant main.go pkg/handler.go
+  git diff HEAD~1 | gallant --diff
+  printf 'package main\\n' | gallant --assume-filename main.go
+  gallant --provider ollama --model nimble --jobs 16 .
+
+Help topics:
+  gallant --help rules      the rule format
+  gallant --help providers  the provider list
+  gallant --help output     the output format
+.fi
+.SH RULES
+.nf
+Rule format
+
+  A rule is a markdown file. Put rules in .agents/gallant, or in the directory
+  given with --rules. gallant reads rules in subdirectories and ignores hidden
+  files.
+
+  A rule has optional frontmatter between two "---" lines, then the rule text:
+
+    ---
+    appliesTo: "*.go"
+    type: noul
+    ---
+    # No debugging leftovers
+
+    Report a violation when the file keeps code that only helped while it was
+    written.
+
+Frontmatter fields:
+
+  appliesTo      A glob, or a list of globs, matched against the file name (not
+                 the path). gallant uses the rule only when a glob matches.
+
+  type           The question the model answers. One of:
+
+                   noul    asks whether the file breaks the rule, and reports a
+                           violation above minConfidence.
+                   choice  asks which option describes the file.
+                   score   asks which level describes the file.
+
+  criteria       For choice, a mapping of option to description. For score, an
+                 ordered list of levels, from low to high.
+
+  minConfidence  For noul only. The probability of a violation above which the
+                 rule fails, from 0 to 1 (default 0.5).
+
+Examples:
+
+  noul:
+
+    ---
+    appliesTo: "*.go"
+    type: noul
+    minConfidence: 0.8
+    ---
+    # Exported declarations need doc comments
+
+    Report a violation when an exported declaration has no doc comment.
+
+  choice:
+
+    ---
+    appliesTo: "*.go"
+    type: choice
+    criteria:
+      useful: "The comments explain intent or rationale."
+      mixed: "Some comments add value, others repeat the code."
+      useless: "The comments mostly restate the code."
+    ---
+    Classify the comments in this file.
+
+  score:
+
+    ---
+    appliesTo: "*.md"
+    type: score
+    criteria:
+      - "Easy to read"
+      - "Somewhat hard"
+      - "Very hard"
+    ---
+    Rate how hard this document is to read.
+.fi
+.SH PROVIDERS
+.nf
+Providers
+
+  Choose a provider with --provider and a model with --model. The default
+  provider is opencode, and its default model is used when --model is omitted.
+
+  opencode
+
+    OpenCode Zen's System One gateway, serving TypeSafe's Jev.
+
+    Models   jev-1.13, jev-1.13-free (default)
+    API key  OPENCODE_API_KEY
+
+      export OPENCODE_API_KEY=...
+      gallant --provider opencode --model jev-1.13-free .
+
+  ollama
+
+    A local Ollama server (0.35.0+). No API key. Models are discovered from the
+    server, for example nimble (default), tev1, clef, clef-flash, and laya.
+
+    Base URL  OLLAMA_HOST (default http://127.0.0.1:11434)
+
+      gallant --provider ollama --model nimble .
+
+  strands-decider
+
+    A local Strands Decider server (0.1.0+). No API key. The served checkpoint
+    is discovered from the server, and defaults to
+    strands-decider-2B-qwen3.5-v1-2610.
+
+    The server truncates state larger than the checkpoint's context window (4,096
+    tokens for the shipped checkpoints). Start it with --strict-window to reject
+    an oversized file instead, which gallant reports as a file error.
+
+    The server answers one request at a time, so gallant serialises evaluations
+    for this provider and --jobs has no effect on throughput. Files are still
+    reported in order.
+
+    Base URL  STRANDS_DECIDER_HOST (default http://127.0.0.1:8000)
+
+      pip install strands-decider
+      strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8000
+      gallant --provider strands-decider .
+.fi
+.SH OUTPUT
+.nf
+Output
+
+  gallant prints one finding per line in a fixed, space-separated format:
+
+    <file> <rule> <type> <confidence> <result>
+
+  The format is line-oriented: every newline is escaped, so one finding stays on
+  one line. For machine consumption, --json prints an array of objects instead:
+
+    gallant --json
+
+  A file that cannot be checked (for example, one too large for the model) is
+  reported on standard error as "gallant: <file>: <reason>". The other files are
+  still checked, and the run exits nonzero.
+.fi
