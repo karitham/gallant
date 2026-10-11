@@ -191,3 +191,19 @@ func TestEvaluateDecodeErrorNamesEndpoint(t *testing.T) {
 		t.Fatalf("Evaluate() error = %v, want it to mention an unexpected response", err)
 	}
 }
+
+func TestBodySuffix(t *testing.T) {
+	tests := map[string]string{
+		"":                       "",
+		"  \n\t ":                "",
+		"boom":                   ": boom",
+		"a\nb":                   ": a b",
+		"  spaced   out  ":       ": spaced out",
+		strings.Repeat("x", 300): ": " + strings.Repeat("x", 200) + "...",
+	}
+	for in, want := range tests {
+		if got := bodySuffix(strings.NewReader(in)); got != want {
+			t.Errorf("bodySuffix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

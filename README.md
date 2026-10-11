@@ -79,7 +79,6 @@ snippet) have fuzz targets. Fuzzing is not run automatically; run one directly:
 go test ./rules -fuzz FuzzParse -fuzztime 30s
 go test ./rules -fuzz FuzzSplitFrontmatter -fuzztime 30s
 go test ./cmd/gallant -fuzz FuzzDiffInputs -fuzztime 30s
-go test ./eval/systemone -fuzz FuzzBodySuffix -fuzztime 30s
 ```
 
 A failing input is written under `testdata/fuzz` and can be committed as a
