@@ -1,0 +1,43 @@
+Providers
+
+  Choose a provider with --provider and a model with --model. The default
+  provider is opencode, and its default model is used when --model is omitted.
+
+  opencode
+
+    OpenCode Zen's System One gateway, serving TypeSafe's Jev.
+
+    Models   jev-1.13, jev-1.13-free (default)
+    API key  OPENCODE_API_KEY
+
+      export OPENCODE_API_KEY=...
+      gallant --provider opencode --model jev-1.13-free .
+
+  ollama
+
+    A local Ollama server (0.35.0+). No API key. Models are discovered from the
+    server, for example nimble (default), tev1, clef, clef-flash, and laya.
+
+    Base URL  OLLAMA_HOST (default http://127.0.0.1:11434)
+
+      gallant --provider ollama --model nimble .
+
+  strands-decider
+
+    A local Strands Decider server (0.1.0+). No API key. The served checkpoint
+    is discovered from the server, and defaults to
+    strands-decider-2B-qwen3.5-v1-2610.
+
+    The server truncates state larger than the checkpoint's context window (4,096
+    tokens for the shipped checkpoints). Start it with --strict-window to reject
+    an oversized file instead, which gallant reports as a file error.
+
+    The server answers one request at a time, so gallant serialises evaluations
+    for this provider and --jobs has no effect on throughput. Files are still
+    reported in order.
+
+    Base URL  STRANDS_DECIDER_HOST (default http://127.0.0.1:8000)
+
+      pip install strands-decider
+      strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8000
+      gallant --provider strands-decider .

@@ -38,6 +38,33 @@ const defaultJobs = 8
 const defaultMinConfidence = 0.5
 
 func main() {
+	flag.Usage = func() { printUsage(os.Stderr) }
+
+	// An explicit help request prints to standard output and exits 0, unlike
+	// the standard flag package, which exits 2. A topic prints that section of
+	// the documentation instead of the overview.
+	args := os.Args[1:]
+	for i, arg := range args {
+		switch arg {
+		case "-h", "-help", "--help":
+			var topic string
+			if i+1 < len(args) {
+				topic = args[i+1]
+			}
+			switch topic {
+			case "rules":
+				printRulesHelp(os.Stdout)
+			case "providers":
+				printProvidersHelp(os.Stdout)
+			case "output":
+				printOutputHelp(os.Stdout)
+			default:
+				printUsage(os.Stdout)
+			}
+			return
+		}
+	}
+
 	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
 	model := flag.String("model", "", "model name")
 	rulesDir := flag.String("rules", defaultRulesDir, "directory of lint rules, relative to the current working directory")

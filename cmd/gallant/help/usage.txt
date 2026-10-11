@@ -1,0 +1,58 @@
+gallant - check files against rules with a decision model
+
+Usage:
+  gallant [options] path...
+  gallant [options] --diff
+  gallant [options] --assume-filename name
+
+Description:
+  gallant checks files against rules. A rule gives one question to a decision
+  model, and gallant prints one line for each answer. Rules are markdown files
+  in .agents/gallant.
+
+Input:
+  With no --diff or --assume-filename, gallant checks the files and directories
+  you name. An explicit file is always checked. A directory is walked, and each
+  file whose name matches a rule is checked.
+
+  --diff reads a unified diff from standard input and checks each changed file.
+  --assume-filename reads one file from standard input and names it, so a pipe
+  can stand in for a file. The two options are mutually exclusive and take no
+  path operands.
+
+Options:
+  --provider name         model provider (default "opencode")
+  --model name            model name (default from the provider)
+  --rules dir             directory of lint rules (default ".agents/gallant")
+  --jobs n                files to check concurrently (default 8)
+  --include-passing       also print the rules the file passes
+  --json                  print the answers as a JSON array
+  --diff                  check a unified diff read from standard input
+  --assume-filename name  check one file read from standard input under this name
+  -h, --help              print this help and exit
+
+Output:
+  One line per answer, space-separated:
+
+    <file> <rule> <type> <confidence> <result>
+
+  With --json, gallant prints an array of objects instead. A file that cannot be
+  checked is reported on standard error, and it does not stop the other files.
+
+Exit status:
+  0    all checks ran
+  1    an error stopped the run
+  2    no input
+  130  the run was interrupted
+
+Examples:
+  gallant .
+  gallant main.go pkg/handler.go
+  git diff HEAD~1 | gallant --diff
+  printf 'package main\n' | gallant --assume-filename main.go
+  gallant --provider ollama --model nimble --jobs 16 .
+
+Help topics:
+  gallant --help rules      the rule format
+  gallant --help providers  the provider list
+  gallant --help output     the output format

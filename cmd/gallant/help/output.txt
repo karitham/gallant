@@ -1,0 +1,14 @@
+Output
+
+  gallant prints one finding per line in a fixed, space-separated format:
+
+    <file> <rule> <type> <confidence> <result>
+
+  The format is line-oriented: every newline is escaped, so one finding stays on
+  one line. For machine consumption, --json prints an array of objects instead:
+
+    gallant --json
+
+  A file that cannot be checked (for example, one too large for the model) is
+  reported on standard error as "gallant: <file>: <reason>". The other files are
+  still checked, and the run exits nonzero.

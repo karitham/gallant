@@ -1,0 +1,71 @@
+Rule format
+
+  A rule is a markdown file. Put rules in .agents/gallant, or in the directory
+  given with --rules. gallant reads rules in subdirectories and ignores hidden
+  files.
+
+  A rule has optional frontmatter between two "---" lines, then the rule text:
+
+    ---
+    appliesTo: "*.go"
+    type: noul
+    ---
+    # No debugging leftovers
+
+    Report a violation when the file keeps code that only helped while it was
+    written.
+
+Frontmatter fields:
+
+  appliesTo      A glob, or a list of globs, matched against the file name (not
+                 the path). gallant uses the rule only when a glob matches.
+
+  type           The question the model answers. One of:
+
+                   noul    asks whether the file breaks the rule, and reports a
+                           violation above minConfidence.
+                   choice  asks which option describes the file.
+                   score   asks which level describes the file.
+
+  criteria       For choice, a mapping of option to description. For score, an
+                 ordered list of levels, from low to high.
+
+  minConfidence  For noul only. The probability of a violation above which the
+                 rule fails, from 0 to 1 (default 0.5).
+
+Examples:
+
+  noul:
+
+    ---
+    appliesTo: "*.go"
+    type: noul
+    minConfidence: 0.8
+    ---
+    # Exported declarations need doc comments
+
+    Report a violation when an exported declaration has no doc comment.
+
+  choice:
+
+    ---
+    appliesTo: "*.go"
+    type: choice
+    criteria:
+      useful: "The comments explain intent or rationale."
+      mixed: "Some comments add value, others repeat the code."
+      useless: "The comments mostly restate the code."
+    ---
+    Classify the comments in this file.
+
+  score:
+
+    ---
+    appliesTo: "*.md"
+    type: score
+    criteria:
+      - "Easy to read"
+      - "Somewhat hard"
+      - "Very hard"
+    ---
+    Rate how hard this document is to read.
