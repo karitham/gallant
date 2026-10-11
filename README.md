@@ -12,7 +12,7 @@ Decision Models are fast, cheap(er), and can work on more fuzzy rules that tradi
 
 I looked at the other available tools doing this type of work, and I was not left impressed. All the tools I saw were immense slop dumps, required runtimes like python/npm, servers you had to continually run, terrible CLIs, or had many many dependencies (aka supply chain attack vectors!)
 
-I build Gallant to (try) and avoid all of those things. Gallant requires no runtime as it is in go. The CLI adhears to standard unix utility principles such as working off files/filepaths, minimizing configuration needed, and doing one thing well. 
+I build Gallant to (try) and avoid all of those things. Gallant requires no runtime as it is in go. The CLI adheres to standard unix utility principles such as working off files/filepaths, minimizing configuration needed, and doing one thing well. 
 
 Please, if you find it useful give it a share in your favorite tech community!
 
@@ -36,62 +36,11 @@ go install github.com/madxmike/gallant/cmd/gallant@v0.1.0
 
 ## Usage
 
-Gallant evaluates files with a decision model served by a provider. The default
-is `opencode`; see [PROVIDERS.md](PROVIDERS.md) for the available providers.
+To use gallant you will need a set of files and rules. By default gallant will look in the relative `.agents/gallant` for rules. You can then run `gallant .` to apply the rules to all files in the relative path. For more information see `gallant --help`
 
-Gallant takes its input one of three ways.
+For information on making Rules see `gallant --help rules`
 
-Pass paths to lint files or directories:
-
-```sh
-gallant .
-gallant main.go pkg/handler.go
-```
-
-Read a unified diff from stdin with `--diff`. Each changed file becomes one
-evaluation, named by its path in the diff, so rules match the file they
-describe:
-
-```sh
-git diff HEAD~1 | gallant --diff
-```
-
-Read a single file's content from stdin with `--assume-filename`. The name is
-what the rules match, so a pipe can stand in for a file:
-
-```sh
-printf 'package main\n// increment this\n' | gallant --assume-filename main.go
-```
-
-A bare `gallant` prints usage. `--diff` and `--assume-filename` are mutually
-exclusive and take no path operands.
-
-Files are evaluated in parallel, eight at a time by default. Change the number
-of concurrent evaluations with `--jobs`:
-
-```sh
-gallant --jobs 16 .
-```
-
-## Output
-
-Findings print one per line in a fixed, space-separated form:
-
-    <file> <rule> <type> <confidence> <result>
-
-Backslashes, newlines, and other control characters within a field are escaped,
-so every finding stays on a single line and no field contains a tab. The result
-is the last field and may contain spaces.
-
-For machine consumption, `--json` emits an array of objects instead:
-
-```sh
-gallant --json
-```
-
-A file that cannot be evaluated — for example, one too large for the model's
-request limit — is reported on standard error as `gallant: <file>: <reason>`. The
-remaining files are still evaluated, and the run exits nonzero.
+For information on available providers see `gallant --help providers`
 
 ## Limitations
 
@@ -101,22 +50,15 @@ If you are facing this you may chunk the file yourself into relevant, smaller, p
 
 These models are only now becoming mainstream, but are seeing rapid development. The hope is that new models will allow bigger inputs soon enough (as we saw with LLMs). 
 
-## Development
-
-Run the tests:
-
-```sh
-go test ./...
-```
-
-The `rules` package uses golden files. To regenerate them after an intentional
-change:
-
-```sh
-go test ./rules -update
-```
-
 ## Contributing
+
+Well thought out and made contributions are welcome.
+
+#### Adding New Providers
+
+Gallant is not intended to encompass every possible decision model provider. If the provider is large, widely used, or a popular local servers then they will be considered. 
+
+#### Recording Examples
 
 The examples ship terminal recordings generated with
 [VHS](https://github.com/charmbracelet/vhs). Re-recording them requires VHS to
@@ -125,6 +67,9 @@ be installed:
 ```sh
 OPENCODE_API_KEY=... vhs examples/ste100/.vhs/demo.tape
 ```
+
+## Privacy
+
 
 ## License
 
