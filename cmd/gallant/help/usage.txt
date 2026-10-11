@@ -13,7 +13,8 @@ Description:
 Input:
   With no --diff or --assume-filename, gallant checks the files and directories
   you name. An explicit file is always checked. A directory is walked, and each
-  file whose name matches a rule is checked.
+  file whose name matches a rule is checked; hidden files and directories (names
+  beginning with a dot) are skipped during the walk.
 
   --diff reads a unified diff from standard input and checks each changed file.
   --assume-filename reads one file from standard input and names it, so a pipe

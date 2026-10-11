@@ -77,6 +77,36 @@ func TestResolveInputsMissingPath(t *testing.T) {
 	}
 }
 
+// A directory walk skips hidden files and directories, as gofmt does.
+func TestResolveInputsSkipsHiddenEntries(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.go", "")
+	write(t, dir, ".hidden.go", "")
+	write(t, dir, ".git/deep.go", "")
+
+	paths, err := resolveInputs([]string{dir}, nil)
+	if err != nil {
+		t.Fatalf("resolveInputs() error = %v", err)
+	}
+	if len(paths) != 1 || filepath.Base(paths[0].name) != "a.go" {
+		t.Errorf("resolveInputs() = %#v, want only a.go", paths)
+	}
+}
+
+// An explicitly named hidden file is still checked.
+func TestResolveInputsExplicitHiddenFileIncluded(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, ".hidden.go", "")
+
+	paths, err := resolveInputs([]string{filepath.Join(dir, ".hidden.go")}, nil)
+	if err != nil {
+		t.Fatalf("resolveInputs() error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Errorf("resolveInputs() returned %d inputs, want the explicit hidden file", len(paths))
+	}
+}
+
 func TestApplicableSelectsByFileName(t *testing.T) {
 	all := []rules.Rule{
 		{AppliesTo: []string{"*.go"}},

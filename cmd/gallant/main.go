@@ -353,8 +353,9 @@ func textInput(name, content string) input {
 // resolveInputs expands path operands into matching file inputs, mirroring
 // gofmt's operand handling. An explicit file operand is always included; a
 // directory operand is walked and each file within it is included only when
-// match reports true for its name. Files are opened lazily by evaluate, not
-// here, so a large tree does not hold one descriptor per file.
+// match reports true for its name, and hidden files and directories are skipped
+// during the walk. Files are opened lazily by evaluate, not here, so a large tree
+// does not hold one descriptor per file.
 func resolveInputs(paths []string, match func(name string) bool) ([]input, error) {
 	var inputs []input
 	for _, p := range paths {
@@ -363,6 +364,16 @@ func resolveInputs(paths []string, match func(name string) bool) ([]input, error
 				return err
 			}
 			if d.IsDir() {
+				// Skip hidden directories, as gofmt does, so a broad glob does
+				// not descend into .git and the like.
+				if path != p && strings.HasPrefix(d.Name(), ".") {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			// Hidden files are skipped during a walk but still honoured when named
+			// explicitly, as with gofmt.
+			if path != p && strings.HasPrefix(d.Name(), ".") {
 				return nil
 			}
 			if path != p && match != nil && !match(d.Name()) {
