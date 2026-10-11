@@ -70,6 +70,7 @@ OPENCODE_API_KEY=... vhs examples/ste100/.vhs/demo.tape
 
 ## Privacy
 
+Gallant does not emit telemetry, log, or attempt to obtain any additional information than what you provide as input. As gallant interfaces with hosted providers of your chosing it will pass information you give to these providers in order to perform lint evalautations. See your chosen provider's privacy policy. 
 
 ## License
 
