@@ -129,6 +129,9 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	if err != nil {
 		return err
 	}
+	if len(loaded) == 0 {
+		fmt.Fprintln(os.Stderr, "gallant: no rules found; nothing will be checked")
+	}
 
 	// minConfidence is indexed by rule path so a finding can recover the
 	// threshold its rule declared.
@@ -451,11 +454,13 @@ func validateInputs(diff bool, assumeFilename string, args []string) error {
 	return nil
 }
 
-// checkRulesDir reports a missing or unreadable rules directory in terms a user
-// can act on, rather than the raw stat error.
+// checkRulesDir reports a missing, unreadable, or non-directory rules path in
+// terms a user can act on, rather than the raw stat error.
 func checkRulesDir(dir string) error {
-	_, err := os.Stat(dir)
+	info, err := os.Stat(dir)
 	switch {
+	case err == nil && !info.IsDir():
+		return fmt.Errorf("rules directory %q is not a directory", dir)
 	case err == nil:
 		return nil
 	case errors.Is(err, fs.ErrNotExist):

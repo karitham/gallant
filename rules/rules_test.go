@@ -163,6 +163,7 @@ func TestParseErrors(t *testing.T) {
 		"minConfidence above one":  "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: 1.5\n---\nbody\n",
 		"minConfidence below zero": "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: -0.1\n---\nbody\n",
 		"minConfidence on choice":  "---\ntype: choice\ncriteria:\n  a: \"one\"\nminConfidence: 0.8\n---\nbody\n",
+		"bad appliesTo glob":       "---\ntype: noul\nappliesTo: \"[\"\n---\nbody\n",
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {

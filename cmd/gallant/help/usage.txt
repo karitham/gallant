@@ -48,6 +48,9 @@ Output:
   A failure of the provider itself (an unreachable or erroring server) is
   reported once, not per file.
 
+  If the rules directory holds no rules, a warning is printed and nothing is
+  checked.
+
 Exit status:
   0    all checks ran
   1    an error stopped the run

@@ -537,6 +537,35 @@ func TestCheckRulesDir(t *testing.T) {
 	}
 }
 
+// A path that exists but is a file is not a rules directory.
+func TestCheckRulesDirRejectsFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := checkRulesDir(file)
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("checkRulesDir(file) error = %v, want a not-a-directory message", err)
+	}
+}
+
+// An empty rules directory means nothing will be checked, so say so rather than
+// exit silently as if everything passed.
+func TestRunWarnsWhenNoRules(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.go", "")
+
+	_ = stdout(t)
+	errOut := stderr(t)
+
+	if err := run(context.Background(), fstest.MapFS{}, []string{dir}, false, "", echoModel{}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if text := errOut(); !strings.Contains(text, "no rules found") {
+		t.Errorf("stderr = %q, want a warning that no rules were found", text)
+	}
+}
+
 func TestUnwrapPathDropsSyscallName(t *testing.T) {
 	_, err := os.Stat(filepath.Join(t.TempDir(), "missing"))
 	got := unwrapPath(err).Error()

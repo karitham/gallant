@@ -99,6 +99,14 @@ func Parse(data []byte) (Rule, error) {
 		}
 	}
 
+	// A malformed glob would silently never match, so reject it here where the
+	// file can be named rather than leaving a rule that does nothing.
+	for _, glob := range cfg.AppliesTo {
+		if _, err := path.Match(glob, ""); err != nil {
+			return Rule{}, fmt.Errorf("invalid appliesTo glob %q: %w", glob, err)
+		}
+	}
+
 	return Rule{
 		AppliesTo:     cfg.AppliesTo,
 		Type:          cfg.Type,
@@ -123,8 +131,9 @@ func ParseFile(fsys fs.FS, name string) (Rule, error) {
 	return rule, nil
 }
 
-// Applies reports whether any of the rule's globs match name. Malformed globs
-// never match.
+// Applies reports whether any of the rule's globs match name. A malformed glob
+// never matches; Parse rejects malformed globs, so this only guards rules built
+// directly.
 func (r Rule) Applies(name string) bool {
 	for _, glob := range r.AppliesTo {
 		if ok, err := path.Match(glob, name); err == nil && ok {
