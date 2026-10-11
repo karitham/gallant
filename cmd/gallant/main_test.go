@@ -500,6 +500,32 @@ func TestRunReportsFailedFileAndContinues(t *testing.T) {
 	}
 }
 
+// A provider failure is the same for every file, so it is reported once with a
+// count instead of once per file.
+func TestRunReportsProviderFailureOnce(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.go", "")
+	write(t, dir, "b.go", "")
+	write(t, dir, "c.go", "")
+
+	_ = stdout(t)
+	errOut := stderr(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
+	err := run(context.Background(), rulesFS, []string{dir}, false, "", providerErrorModel{}, 2, false, false)
+	if err == nil {
+		t.Error("run() error = nil, want a failure when files could not be evaluated")
+	}
+
+	text := errOut()
+	if n := strings.Count(text, "provider unreachable"); n != 1 {
+		t.Errorf("stderr = %q, want the provider failure once, got %d", text, n)
+	}
+	if !strings.Contains(text, "(3 files)") {
+		t.Errorf("stderr = %q, want a count of the files that failed", text)
+	}
+}
+
 func TestCheckRulesDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := checkRulesDir(dir); err != nil {
@@ -629,6 +655,14 @@ type errorModel struct{}
 
 func (errorModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
 	return nil, errors.New("evaluate failed")
+}
+
+// providerErrorModel fails every input with a provider-level error, as an
+// unreachable or erroring server does.
+type providerErrorModel struct{}
+
+func (providerErrorModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	return nil, &eval.ProviderError{Err: errors.New("provider unreachable")}
 }
 
 func write(t *testing.T, dir, name, content string) {

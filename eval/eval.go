@@ -29,3 +29,15 @@ type Model interface {
 type Lister interface {
 	List(ctx context.Context) ([]string, error)
 }
+
+// ProviderError reports a failure of the model provider itself — an unreachable
+// server, a rejected request, or a malformed response — as opposed to a problem
+// with one input. Because it is the same for every file, a run reports it once
+// rather than repeating it per file.
+type ProviderError struct {
+	Err error
+}
+
+func (e *ProviderError) Error() string { return e.Err.Error() }
+
+func (e *ProviderError) Unwrap() error { return e.Err }

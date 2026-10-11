@@ -11,9 +11,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -78,7 +80,7 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %w", c.url, err)}
 	}
 	if c.key != "" {
 		req.Header.Set("Authorization", "Bearer "+c.key)
@@ -87,24 +89,26 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %w", c.url, requestCause(err))}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("systemone: %s: %s", c.url, resp.Status)
+		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %s%s", c.url, resp.Status, bodySuffix(resp.Body))}
 	}
 
 	var res response
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
+		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: unexpected response: %w", c.url, err)}
 	}
 
 	var findings []eval.Finding
 	for _, r := range rs {
 		a, ok := res.Answers[r.Path]
 		if !ok {
-			continue
+			// A question the server did not answer would otherwise look like a
+			// clean pass, so report it rather than dropping the finding.
+			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: no answer for rule %q", c.url, r.Path)}
 		}
 		f := eval.Finding{Rule: r.Path, Type: r.Type}
 		switch r.Type {
@@ -150,4 +154,29 @@ type answer struct {
 	Choice     string     `json:"choice"`
 	Score      float64    `json:"score"`
 	Confidence float64    `json:"confidence"`
+}
+
+// requestCause strips the method-and-URL wrapper net/http puts around a
+// transport failure, so the diagnostic does not name the URL twice.
+func requestCause(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
+}
+
+// bodySuffix reads a short, single-line snippet of an error response so the
+// server's own explanation reaches the user. It is bounded so a large or HTML
+// error page cannot flood the terminal.
+func bodySuffix(body io.Reader) string {
+	b, _ := io.ReadAll(io.LimitReader(body, 512))
+	s := strings.Join(strings.Fields(string(b)), " ")
+	if s == "" {
+		return ""
+	}
+	if len(s) > 200 {
+		s = s[:200] + "..."
+	}
+	return ": " + s
 }

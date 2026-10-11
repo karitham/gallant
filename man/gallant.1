@@ -50,6 +50,9 @@ Output:
   reported on standard error as "gallant: <file>: <reason>". The other files are
   still checked, and the run exits nonzero.
 
+  A failure of the provider itself (an unreachable or erroring server) is
+  reported once, not per file.
+
 Exit status:
   0    all checks ran
   1    an error stopped the run

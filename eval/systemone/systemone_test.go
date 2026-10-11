@@ -3,6 +3,7 @@ package systemone
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -127,5 +128,66 @@ func TestEvaluateHTTPError(t *testing.T) {
 	c.http = srv.Client()
 	if _, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}}); err == nil {
 		t.Fatal("Evaluate() error = nil, want an error for a non-200 response")
+	}
+}
+
+// A response that is not the expected shape, or a question the server did not
+// answer, is a provider fault, never a clean pass.
+func TestEvaluateReportsProviderFaults(t *testing.T) {
+	tests := map[string]http.HandlerFunc{
+		"http status": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"malformed body": func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("not json"))
+		},
+	}
+	for name, h := range tests {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(h)
+			defer srv.Close()
+
+			c := New(srv.URL, "nimble", "")
+			c.http = srv.Client()
+			_, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}})
+			var pe *eval.ProviderError
+			if !errors.As(err, &pe) {
+				t.Fatalf("Evaluate() error = %v, want a ProviderError", err)
+			}
+		})
+	}
+}
+
+func TestEvaluateReportsMissingAnswer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(response{Answers: map[string]answer{
+			"a.md": {Type: "noul", Noul: 0.9},
+		}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "nimble", "")
+	c.http = srv.Client()
+	_, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{
+		{Path: "a.md", Type: rules.TypeNoul, Body: "A"},
+		{Path: "b.md", Type: rules.TypeNoul, Body: "B"},
+	})
+	var pe *eval.ProviderError
+	if !errors.As(err, &pe) {
+		t.Fatalf("Evaluate() error = %v, want a ProviderError for an unanswered rule", err)
+	}
+}
+
+func TestEvaluateDecodeErrorNamesEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "nimble", "")
+	c.http = srv.Client()
+	_, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}})
+	if err == nil || !strings.Contains(err.Error(), "unexpected response") {
+		t.Fatalf("Evaluate() error = %v, want it to mention an unexpected response", err)
 	}
 }

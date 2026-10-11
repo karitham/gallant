@@ -158,9 +158,22 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 
 	records := []record{}
 	var failed int
+	// A provider failure is the same for every file, so report each distinct
+	// message once with a count rather than once per file.
+	providerFaults := map[string]int{}
+	var providerOrder []string
 	for i, res := range results {
 		if res.err != nil {
 			failed++
+			var pe *eval.ProviderError
+			if errors.As(res.err, &pe) {
+				msg := res.err.Error()
+				if _, seen := providerFaults[msg]; !seen {
+					providerOrder = append(providerOrder, msg)
+				}
+				providerFaults[msg]++
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "gallant: %s: %v\n", inputs[i].name, res.err)
 			continue
 		}
@@ -187,6 +200,13 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 				Result:     result,
 				Confidence: confidence,
 			})
+		}
+	}
+	for _, msg := range providerOrder {
+		if n := providerFaults[msg]; n > 1 {
+			fmt.Fprintf(os.Stderr, "gallant: %s (%d files)\n", msg, n)
+		} else {
+			fmt.Fprintf(os.Stderr, "gallant: %s\n", msg)
 		}
 	}
 
