@@ -14,142 +14,99 @@ import (
 	"github.com/madxmike/gallant/rules"
 )
 
-type captured struct {
-	auth string
-	req  request
+// fakePost answers every request with reply and records the request it was
+// sent in *sent.
+func fakePost(t *testing.T, reply string, sent *request) Post {
+	t.Helper()
+	return func(_ context.Context, _ string, body []byte) ([]byte, error) {
+		if err := json.Unmarshal(body, sent); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		return []byte(reply), nil
+	}
 }
 
 func TestEvaluate(t *testing.T) {
-	got := make(chan captured, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode request: %v", err)
-		}
-		got <- captured{auth: r.Header.Get("Authorization"), req: req}
-		json.NewEncoder(w).Encode(response{
-			Answers: map[string]answer{
-				"a.md": {Type: "noul", Noul: 0.9},
-				"b.md": {Type: "noul", Noul: 0.1},
+	tests := []struct {
+		name  string
+		rules []rules.Rule
+		reply string
+		want  []eval.Finding
+	}{
+		{
+			name: "noul",
+			rules: []rules.Rule{
+				{Path: "a.md", Type: rules.TypeNoul, Body: "rule A"},
+				{Path: "b.md", Type: rules.TypeNoul, Body: "rule B"},
 			},
-		})
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "jev-1.13-free", "secret")
-	c.http = srv.Client()
-
-	findings, err := c.Evaluate(context.Background(), strings.NewReader("package main"), []rules.Rule{
-		{Path: "a.md", Type: rules.TypeNoul, Body: "rule A"},
-		{Path: "b.md", Type: rules.TypeNoul, Body: "rule B"},
-	})
-	if err != nil {
-		t.Fatalf("Evaluate() error = %v", err)
-	}
-	want := []eval.Finding{
-		{Rule: "a.md", Type: rules.TypeNoul, Confidence: 0.9},
-		{Rule: "b.md", Type: rules.TypeNoul, Confidence: 0.1},
-	}
-	if !reflect.DeepEqual(findings, want) {
-		t.Errorf("Evaluate() = %#v, want %#v", findings, want)
-	}
-
-	capture := <-got
-	if capture.auth != "Bearer secret" {
-		t.Errorf("Authorization = %q, want %q", capture.auth, "Bearer secret")
-	}
-	if capture.req.Model != "jev-1.13-free" {
-		t.Errorf("model = %q, want %q", capture.req.Model, "jev-1.13-free")
-	}
-	if capture.req.State != "package main" {
-		t.Errorf("state = %q, want %q", capture.req.State, "package main")
-	}
-	if len(capture.req.Questions) != 2 {
-		t.Errorf("questions = %d, want 2", len(capture.req.Questions))
-	}
-}
-
-// A client built without a key must not send an Authorization header, so local
-// servers that ignore authentication are not handed an empty Bearer token.
-func TestEvaluateWithoutKeyOmitsAuth(t *testing.T) {
-	got := make(chan string, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got <- r.Header.Get("Authorization")
-		json.NewEncoder(w).Encode(response{})
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "nimble", "")
-	c.http = srv.Client()
-	if _, err := c.Evaluate(context.Background(), strings.NewReader(""), nil); err != nil {
-		t.Fatalf("Evaluate() error = %v", err)
-	}
-	if auth := <-got; auth != "" {
-		t.Errorf("Authorization = %q, want none", auth)
-	}
-}
-
-func TestEvaluateOtherTypes(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(response{
-			Answers: map[string]answer{
-				"s.md": {Type: "choice", Choice: "violation", Confidence: 0.82},
-				"r.md": {Type: "score", Score: 1, Confidence: 0.9},
+			reply: `{"answers":{"q0":{"type":"noul","noul":0.9},"q1":{"type":"noul","noul":0.1}}}`,
+			want: []eval.Finding{
+				{Rule: "a.md", Type: rules.TypeNoul, Confidence: 0.9},
+				{Rule: "b.md", Type: rules.TypeNoul, Confidence: 0.1},
 			},
+		},
+		{
+			name: "choice and score",
+			rules: []rules.Rule{
+				{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
+				{Path: "r.md", Type: rules.TypeScore, Criteria: rules.Criteria{Levels: []string{"low", "mid", "high"}}},
+			},
+			reply: `{"answers":{"q0":{"type":"choice","choice":"violation","confidence":0.82},"q1":{"type":"score","score":1,"confidence":0.9}}}`,
+			want: []eval.Finding{
+				{Rule: "s.md", Type: rules.TypeChoice, Result: "violation", Confidence: 0.82},
+				{Rule: "r.md", Type: rules.TypeScore, Result: "mid", Confidence: 0.9},
+			},
+		},
+		{
+			// A nested path is not a valid question id on every server, so it
+			// never reaches the wire; the finding still names the rule.
+			name:  "nested path",
+			rules: []rules.Rule{{Path: "go/style.md", Type: rules.TypeNoul, Body: "A"}},
+			reply: `{"answers":{"q0":{"type":"noul","noul":0.2}}}`,
+			want:  []eval.Finding{{Rule: "go/style.md", Type: rules.TypeNoul, Confidence: 0.2}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sent request
+			got, err := New(fakePost(t, tt.reply, &sent), "nimble").Evaluate(context.Background(), strings.NewReader("package main"), tt.rules)
+			if err != nil {
+				t.Fatalf("Evaluate() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Evaluate() = %#v, want %#v", got, tt.want)
+			}
+
+			if sent.Model != "nimble" || sent.State != "package main" {
+				t.Errorf("request model, state = %q, %q", sent.Model, sent.State)
+			}
+			for i, r := range tt.rules {
+				q, ok := sent.Questions[questionID(i)]
+				if !ok || q.Instructions != r.Instructions() {
+					t.Errorf("question %s = %#v, want the instructions of %s", questionID(i), q, r.Path)
+				}
+			}
 		})
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "nimble", "")
-	c.http = srv.Client()
-	findings, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{
-		{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
-		{Path: "r.md", Type: rules.TypeScore, Criteria: rules.Criteria{Levels: []string{"low", "mid", "high"}}},
-	})
-	if err != nil {
-		t.Fatalf("Evaluate() error = %v", err)
-	}
-	want := []eval.Finding{
-		{Rule: "s.md", Type: rules.TypeChoice, Result: "violation", Confidence: 0.82},
-		{Rule: "r.md", Type: rules.TypeScore, Result: "mid", Confidence: 0.9},
-	}
-	if !reflect.DeepEqual(findings, want) {
-		t.Errorf("Evaluate() = %#v, want %#v", findings, want)
 	}
 }
 
-func TestEvaluateHTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "nimble", "")
-	c.http = srv.Client()
-	if _, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}}); err == nil {
-		t.Fatal("Evaluate() error = nil, want an error for a non-200 response")
-	}
-}
-
-// A response that is not the expected shape, or a question the server did not
-// answer, is a provider fault, never a clean pass.
+// A malformed answer, or a question the server did not answer, is a provider
+// fault, never a clean pass.
 func TestEvaluateReportsProviderFaults(t *testing.T) {
-	tests := map[string]http.HandlerFunc{
-		"http status": func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusUnauthorized)
-		},
-		"malformed body": func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("not json"))
-		},
+	tests := []struct {
+		name  string
+		reply string
+	}{
+		{name: "malformed body", reply: "not json"},
+		{name: "missing answer", reply: `{"answers":{"q0":{"type":"noul","noul":0.9}}}`},
 	}
-	for name, h := range tests {
-		t.Run(name, func(t *testing.T) {
-			srv := httptest.NewServer(h)
-			defer srv.Close()
-
-			c := New(srv.URL, "nimble", "")
-			c.http = srv.Client()
-			_, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sent request
+			_, err := New(fakePost(t, tt.reply, &sent), "nimble").Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{
+				{Path: "a.md", Type: rules.TypeNoul, Body: "A"},
+				{Path: "b.md", Type: rules.TypeNoul, Body: "B"},
+			})
 			var pe *eval.ProviderError
 			if !errors.As(err, &pe) {
 				t.Fatalf("Evaluate() error = %v, want a ProviderError", err)
@@ -158,37 +115,49 @@ func TestEvaluateReportsProviderFaults(t *testing.T) {
 	}
 }
 
-func TestEvaluateReportsMissingAnswer(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(response{Answers: map[string]answer{
-			"a.md": {Type: "noul", Noul: 0.9},
-		}})
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "nimble", "")
-	c.http = srv.Client()
-	_, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{
-		{Path: "a.md", Type: rules.TypeNoul, Body: "A"},
-		{Path: "b.md", Type: rules.TypeNoul, Body: "B"},
-	})
-	var pe *eval.ProviderError
-	if !errors.As(err, &pe) {
-		t.Fatalf("Evaluate() error = %v, want a ProviderError for an unanswered rule", err)
+func TestEvaluatePassesPostErrorThrough(t *testing.T) {
+	want := &eval.ProviderError{Err: errors.New("down")}
+	post := func(context.Context, string, []byte) ([]byte, error) { return nil, want }
+	_, err := New(post, "nimble").Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md"}})
+	if err != want {
+		t.Fatalf("Evaluate() error = %v, want %v", err, want)
 	}
 }
 
-func TestEvaluateDecodeErrorNamesEndpoint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not json"))
-	}))
-	defer srv.Close()
+// HTTP is the one transport test: it posts to the System One path, sends the
+// key only when there is one, and reports a non-200 status as a provider fault.
+func TestHTTP(t *testing.T) {
+	tests := []struct {
+		name     string
+		key      string
+		status   int
+		wantAuth string
+		wantErr  bool
+	}{
+		{name: "with key", key: "secret", status: http.StatusOK, wantAuth: "Bearer secret"},
+		{name: "without key", status: http.StatusOK},
+		{name: "error status", status: http.StatusUnauthorized, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != endpoint {
+					t.Errorf("path = %q, want %q", r.URL.Path, endpoint)
+				}
+				if got := r.Header.Get("Authorization"); got != tt.wantAuth {
+					t.Errorf("Authorization = %q, want %q", got, tt.wantAuth)
+				}
+				w.WriteHeader(tt.status)
+				w.Write([]byte("{}"))
+			}))
+			defer srv.Close()
 
-	c := New(srv.URL, "nimble", "")
-	c.http = srv.Client()
-	_, err := c.Evaluate(context.Background(), strings.NewReader(""), []rules.Rule{{Path: "a.md", Body: "x"}})
-	if err == nil || !strings.Contains(err.Error(), "unexpected response") {
-		t.Fatalf("Evaluate() error = %v, want it to mention an unexpected response", err)
+			_, err := HTTP(srv.URL, tt.key)(context.Background(), "nimble", []byte("{}"))
+			var pe *eval.ProviderError
+			if tt.wantErr != errors.As(err, &pe) {
+				t.Fatalf("post() error = %v, want provider error: %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 

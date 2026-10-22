@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/madxmike/gallant/eval"
+	_ "github.com/madxmike/gallant/eval/cloudflare"
 	_ "github.com/madxmike/gallant/eval/ollama"
 	_ "github.com/madxmike/gallant/eval/opencode"
 	_ "github.com/madxmike/gallant/eval/strandsdecider"

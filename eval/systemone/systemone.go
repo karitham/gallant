@@ -1,10 +1,12 @@
-// Package systemone implements the System One decision protocol over HTTP.
+// Package systemone implements the System One decision protocol.
 //
 // A System One server answers a state against typed questions and returns
 // typed answers and probabilities instead of generated text. OpenCode Zen
-// (Jev), TypeSafe, Ollama, llama.cpp and Ollaya all expose the same
-// POST /v1/systemone contract, so one client reaches them all. Providers
-// supply the base URL and any API key; see eval/opencode and eval/ollama.
+// (Jev), TypeSafe, Ollama, llama.cpp, Ollaya and Strands Decider expose it at
+// POST /v1/systemone, and HTTP posts to that endpoint. Cloudflare Workers AI
+// serves the same body at its own endpoint and envelope, so eval/cloudflare
+// supplies its own Post. See also eval/opencode, eval/ollama and
+// eval/strandsdecider.
 package systemone
 
 import (
@@ -16,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,38 +30,55 @@ import (
 // questions about a state.
 const endpoint = "/v1/systemone"
 
-// Client evaluates files with a System One server.
-type Client struct {
-	url   string
+// Post sends a System One request body for model and returns the response
+// body, the object holding "answers". It reports a failure of the server or
+// the transport as an *eval.ProviderError that names the endpoint.
+type Post func(ctx context.Context, model string, body []byte) ([]byte, error)
+
+// New returns an eval.Model that asks model its questions through post.
+func New(post Post, model string) eval.Model {
+	return &evaluator{post: post, model: model}
+}
+
+type evaluator struct {
+	post  Post
 	model string
-	key   string
-	http  *http.Client
 }
 
-// New returns a Client that evaluates with model at baseURL, such as
-// "http://localhost:11434". The System One path is appended to baseURL. apiKey
-// is optional and sent as a Bearer token only when non-empty.
-func New(baseURL, model, apiKey string) *Client {
-	return &Client{
-		url:   strings.TrimRight(baseURL, "/") + endpoint,
-		model: model,
-		key:   apiKey,
-		http:  &http.Client{Timeout: 30 * time.Second},
-	}
-}
-
-var _ eval.Model = (*Client)(nil)
-
-// Evaluate implements eval.Model by asking the model, once per rule, whether
-// the input violates it.
-func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+// Evaluate implements eval.Model by asking the model about every rule in one
+// request.
+func (e *evaluator) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
 	state, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
+	body, err := json.Marshal(newRequest(e.model, string(state), rs))
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := e.post(ctx, e.model, body)
+	if err != nil {
+		return nil, err
+	}
+
+	var res response
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: unexpected response: %w", err)}
+	}
+	return findings(res, rs)
+}
+
+// questionID names the question asked for the rule at index i. Rule paths may
+// hold characters a server rejects in ids, such as "/", so ids are positional.
+func questionID(i int) string {
+	return "q" + strconv.Itoa(i)
+}
+
+func newRequest(model, state string, rs []rules.Rule) request {
 	questions := make(map[string]question, len(rs))
-	for _, r := range rs {
+	for i, r := range rs {
 		var criteria any
 		switch {
 		case r.Criteria.Options != nil:
@@ -66,68 +86,79 @@ func (c *Client) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 		case r.Criteria.Levels != nil:
 			criteria = r.Criteria.Levels
 		}
-		questions[r.Path] = question{Type: r.Type, Instructions: r.Instructions(), Criteria: criteria}
+		questions[questionID(i)] = question{Type: r.Type, Instructions: r.Instructions(), Criteria: criteria}
 	}
+	return request{Model: model, State: state, Questions: questions}
+}
 
-	body, err := json.Marshal(request{
-		Model:     c.model,
-		State:     string(state),
-		Questions: questions,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
-	if err != nil {
-		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %w", c.url, err)}
-	}
-	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %w", c.url, requestCause(err))}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %s%s", c.url, resp.Status, bodySuffix(resp.Body))}
-	}
-
-	var res response
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: unexpected response: %w", c.url, err)}
-	}
-
-	var findings []eval.Finding
-	for _, r := range rs {
-		a, ok := res.Answers[r.Path]
+// findings maps each rule to the answer given for its question.
+func findings(res response, rs []rules.Rule) ([]eval.Finding, error) {
+	out := make([]eval.Finding, len(rs))
+	for i, r := range rs {
+		a, ok := res.Answers[questionID(i)]
 		if !ok {
 			// A question the server did not answer would otherwise look like a
 			// clean pass, so report it rather than dropping the finding.
-			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: no answer for rule %q", c.url, r.Path)}
+			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: no answer for rule %q", r.Path)}
 		}
-		f := eval.Finding{Rule: r.Path, Type: r.Type}
-		switch r.Type {
-		case rules.TypeChoice:
-			f.Result = a.Choice
-			f.Confidence = a.Confidence
-		case rules.TypeScore:
-			f.Confidence = a.Confidence
-			if i := int(a.Score); i >= 0 && i < len(r.Criteria.Levels) {
-				f.Result = r.Criteria.Levels[i]
-			} else {
-				f.Result = fmt.Sprintf("%g", a.Score)
-			}
-		default:
-			f.Confidence = a.Noul
-		}
-		findings = append(findings, f)
+		out[i] = finding(r, a)
 	}
-	return findings, nil
+	return out, nil
+}
+
+func finding(r rules.Rule, a answer) eval.Finding {
+	f := eval.Finding{Rule: r.Path, Type: r.Type}
+	switch r.Type {
+	case rules.TypeChoice:
+		f.Result = a.Choice
+		f.Confidence = a.Confidence
+	case rules.TypeScore:
+		f.Confidence = a.Confidence
+		if i := int(a.Score); i >= 0 && i < len(r.Criteria.Levels) {
+			f.Result = r.Criteria.Levels[i]
+		} else {
+			f.Result = fmt.Sprintf("%g", a.Score)
+		}
+	default:
+		f.Confidence = a.Noul
+	}
+	return f
+}
+
+// HTTP returns a Post that sends requests to the System One endpoint under
+// baseURL, such as "http://localhost:11434". apiKey is optional and sent as a
+// Bearer token only when non-empty. The returned Post ignores its model
+// argument, because the body already names the model.
+func HTTP(baseURL, apiKey string) Post {
+	u := strings.TrimRight(baseURL, "/") + endpoint
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	return func(ctx context.Context, _ string, body []byte) ([]byte, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+		if err != nil {
+			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %w", u, err)}
+		}
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %w", u, requestCause(err))}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: %s%s", u, resp.Status, bodySuffix(resp.Body))}
+		}
+
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, &eval.ProviderError{Err: fmt.Errorf("systemone: %s: read response: %w", u, err)}
+		}
+		return raw, nil
+	}
 }
 
 type request struct {

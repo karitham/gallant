@@ -9,7 +9,7 @@ import (
 	"github.com/madxmike/gallant/eval/systemone"
 )
 
-// baseURL is OpenCode Zen; the System One client appends its own path.
+// baseURL is OpenCode Zen; systemone.HTTP appends the System One path.
 const baseURL = "https://opencode.ai/zen"
 
 // keyEnvVar names the environment variable that holds the OpenCode Zen API key.
@@ -31,7 +31,7 @@ func New(key string, model Model) (eval.Model, error) {
 	if key == "" && model != Jev113Free {
 		return nil, fmt.Errorf("opencode: %s requires %s, which is not set", model, keyEnvVar)
 	}
-	return systemone.New(baseURL, string(model), key), nil
+	return systemone.New(systemone.HTTP(baseURL, key), string(model)), nil
 }
 
 func init() {
