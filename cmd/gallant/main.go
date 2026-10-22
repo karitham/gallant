@@ -166,7 +166,7 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	}
 
 	records := []record{}
-	var failed int
+	var failed, violations int
 	// A provider failure is the same for every file, so report each distinct
 	// message once with a count rather than once per file.
 	providerFaults := map[string]int{}
@@ -203,6 +203,7 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 				verdict, reason = "pass", why
 				if violated {
 					verdict = "fail"
+					violations++
 				}
 			}
 			// A noul is reported only when its probability of a violation clears
@@ -213,8 +214,12 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 				if !ok {
 					min = defaultMinConfidence
 				}
-				if outcome(finding.Outcomes, "fail").Confidence <= min && !includePassing {
+				failConfidence := outcome(finding.Outcomes, "fail").Confidence
+				if failConfidence <= min && !includePassing {
 					continue
+				}
+				if failConfidence > min {
+					violations++
 				}
 			}
 			records = append(records, record{
@@ -261,6 +266,9 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	if failed > 0 {
 		return fmt.Errorf("could not evaluate %d of %d files", failed, len(inputs))
 	}
+	if violations > 0 {
+		return fmt.Errorf("%w: %d", errChecksFailed, violations)
+	}
 	return nil
 }
 
@@ -274,6 +282,10 @@ func outcome(outcomes []eval.Outcome, result string) eval.Outcome {
 	}
 	return eval.Outcome{Result: result}
 }
+
+// errChecksFailed reports that the run completed and at least one rule failed,
+// so a script or CI job can gate on the exit status.
+var errChecksFailed = errors.New("checks failed")
 
 // record is one finding as it is emitted. Results holds every outcome the model
 // weighed, most likely first, and Confidence is the probability of that result,
