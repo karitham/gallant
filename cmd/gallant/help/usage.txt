@@ -22,10 +22,10 @@ Input:
   path operands.
 
 Options:
-  --provider name         model provider (default "opencode")
-  --model name            model name (default from the provider)
-  --rules dir             directory of lint rules (default ".agents/gallant")
-  --jobs n                files to check concurrently (default 8)
+  --provider name         model provider (default $GALLANT_PROVIDER or "opencode")
+  --model name            model name (default $GALLANT_MODEL or the provider's)
+  --rules dir             directory of lint rules (default $GALLANT_RULES or ".agents/gallant")
+  --jobs n                files to check concurrently (default 8, at least 1)
   --include-passing       also print the rules the file passes
   --json                  print the findings as a JSON array
   --diff                  check a unified diff read from standard input
@@ -71,10 +71,21 @@ Output:
   If the rules directory holds no rules, a warning is printed and nothing is
   checked.
 
+Environment:
+  GALLANT_PROVIDER  default model provider, used when --provider is absent
+  GALLANT_MODEL     default model name, used when --model is absent
+  GALLANT_RULES     default rules directory, used when --rules is absent
+
+  A flag overrides its environment default. An environment variable set to the
+  empty string counts as unset.
+
 Exit status:
   0    all checks ran and none failed
-  1    a check failed, or an error stopped the run
-  2    no input, or conflicting options
+  1    a check failed, or an error stopped the run (for example, a missing API
+       key, an unreadable rules directory, or a provider that could not be
+       reached)
+  2    the command line cannot be used: no input, conflicting options, an
+       unknown provider or model, or an invalid option value
   130  the run was interrupted
 
 Examples:

@@ -11,8 +11,11 @@ type Provider struct {
 	// URLEnvVar names the environment variable that holds the provider's base
 	// URL. It is empty for providers whose URL is fixed.
 	URLEnvVar string
-	Models    []string
-	Default   string
+	// Models is the set of model names the provider declares. A provider with an
+	// empty Models set has no declared set; a model that implements Lister is
+	// queried for the names it offers.
+	Models  []string
+	Default string
 	// New builds a Model from the API key and base URL read from the provider's
 	// environment variables, and the selected model name. A provider ignores the
 	// values it does not use. It returns an error when a requirement is unmet,
