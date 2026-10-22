@@ -1,7 +1,7 @@
 // Package ollama provides an eval.Model backed by a local Ollama server.
 //
 // Ollama (0.35.0+) serves System One decision models — nimble, tev1, clef,
-// clef-flash, laya — through POST /v1/systemone, so the shared protocol client
+// clef-flash, laya — through POST /v1/systemone, so systemone.HTTP
 // reaches them. Local requests need no API key.
 package ollama
 
@@ -26,7 +26,7 @@ const defaultHost = "http://127.0.0.1:11434"
 
 // Model evaluates with Ollama and can list the decision models it offers.
 type Model struct {
-	client *systemone.Client
+	client eval.Model
 	host   string
 }
 
@@ -34,7 +34,7 @@ type Model struct {
 // An empty host falls back to defaultHost.
 func New(host, name string) *Model {
 	base := hostURL(host)
-	return &Model{client: systemone.New(base, name, ""), host: base}
+	return &Model{client: systemone.New(systemone.HTTP(base, ""), name), host: base}
 }
 
 var (

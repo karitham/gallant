@@ -39,7 +39,7 @@ func TestHostURL(t *testing.T) {
 	}
 }
 
-// Evaluate must go through the shared System One client, reaching /v1/systemone
+// Evaluate must go through systemone.HTTP, reaching /v1/systemone
 // without an Authorization header.
 func TestEvaluateTargetsSystemOne(t *testing.T) {
 	got := make(chan string, 1)

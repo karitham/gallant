@@ -165,6 +165,18 @@ Providers
       export OPENCODE_API_KEY=...
       gallant --provider opencode --model jev-1.13-free .
 
+  cloudflare
+
+    Cloudflare Workers AI, serving Cloudflare's Clef decision models. Clef reads
+    up to 64K tokens and up to 64 rules per file.
+
+    Models   clef (default), clef-flash
+    API key  CLOUDFLARE_API_TOKEN (required; a Workers AI token)
+    Account  CLOUDFLARE_ACCOUNT_ID (required)
+
+      export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...
+      gallant --provider cloudflare --model clef-flash .
+
   ollama
 
     A local Ollama server (0.35.0+). No API key. Models are discovered from the

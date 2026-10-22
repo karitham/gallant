@@ -3,7 +3,7 @@
 //
 // Strands Decider (0.1.0+) is AWS Strands Labs' open-source decision model,
 // served with `strands-decider serve`. It answers the System One contract at
-// POST /v1/systemone, so the shared protocol client reaches it. The server
+// POST /v1/systemone, so systemone.HTTP reaches it. The server
 // binds 127.0.0.1 and needs no API key.
 package strandsdecider
 
@@ -29,7 +29,7 @@ const defaultHost = "http://127.0.0.1:8000"
 // Model evaluates with a Strands Decider server and can report the checkpoint
 // it serves.
 type Model struct {
-	client *systemone.Client
+	client eval.Model
 	host   string
 
 	// mu serialises evaluations. A Strands Decider server runs one request at a
@@ -46,7 +46,7 @@ type Model struct {
 // reports.
 func New(host, name string) *Model {
 	base := hostURL(host)
-	return &Model{client: systemone.New(base, name, ""), host: base}
+	return &Model{client: systemone.New(systemone.HTTP(base, ""), name), host: base}
 }
 
 var (
