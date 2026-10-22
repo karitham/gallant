@@ -40,6 +40,8 @@ go install github.com/madxmike/gallant/cmd/gallant@v0.1.0
 
 To use gallant you will need a set of files and rules. By default gallant will look in the relative `.agents/gallant` for rules. You can then run `gallant .` to apply the rules to all files in the relative path. For more information see `gallant --help`
 
+Set `GALLANT_PROVIDER`, `GALLANT_MODEL`, and `GALLANT_RULES` to choose defaults for the provider, model, and rules directory. The matching flags override them.
+
 For information on making Rules see `gallant --help rules`
 
 For information on available providers see `gallant --help providers`

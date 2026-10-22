@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -271,15 +273,14 @@ func TestDiffInputsSplitsPerFile(t *testing.T) {
 }
 
 func TestRunLintsDiffFromStdin(t *testing.T) {
-	stdin(t, exampleDiff)
-	out := stdout(t)
+	s, out, _ := testStreams(exampleDiff)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, true, "", echoModel{}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, runOptions{read: diffReader(), jobs: 1}, echoModel{}, s); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 
-	got := out()
+	got := out.String()
 	for _, want := range []string{"a.go comments.md noul 90% fail", "b.go comments.md noul 90% fail"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output = %q, want %q", got, want)
@@ -340,71 +341,10 @@ func (m pickyModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) 
 	return findings, nil
 }
 
-// stdin points os.Stdin at content for the duration of the test.
-func stdin(t *testing.T, content string) {
-	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "stdin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString(content); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stdin
-	os.Stdin = f
-	t.Cleanup(func() {
-		os.Stdin = orig
-		f.Close()
-	})
-}
-
-// stdout redirects os.Stdout; the returned func yields what was written.
-func stdout(t *testing.T) func() string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stdout
-	os.Stdout = w
-	t.Cleanup(func() {
-		os.Stdout = orig
-		r.Close()
-	})
-	return func() string {
-		w.Close()
-		b, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
-	}
-}
-
-// stderr redirects os.Stderr; the returned func yields what was written.
-func stderr(t *testing.T) func() string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stderr
-	os.Stderr = w
-	t.Cleanup(func() {
-		os.Stderr = orig
-		r.Close()
-	})
-	return func() string {
-		w.Close()
-		b, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
-	}
+// testStreams returns streams that read stdin and buffer the two outputs.
+func testStreams(stdin string) (streams, *bytes.Buffer, *bytes.Buffer) {
+	var out, errOut bytes.Buffer
+	return streams{stdin: strings.NewReader(stdin), stdout: &out, stderr: &errOut}, &out, &errOut
 }
 
 // readInput opens in and returns its content.
@@ -423,79 +363,73 @@ func readInput(t *testing.T, in input) string {
 }
 
 func TestRunAssumesFilenameFromStdin(t *testing.T) {
-	stdin(t, "package a\n// increment i\n")
-	out := stdout(t)
+	s, out, _ := testStreams("package a\n// increment i\n")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", echoModel{}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, runOptions{read: namedReader("a.go"), jobs: 1}, echoModel{}, s); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
-	if got := out(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
+	if got := out.String(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
 		t.Errorf("output = %q, want a finding named a.go", got)
 	}
 }
 
 func TestRunAssumeFilenameSelectsRules(t *testing.T) {
-	stdin(t, "hello")
-	out := stdout(t)
+	s, out, _ := testStreams("hello")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "notes.txt", echoModel{}, 1, false, false); err != nil {
+	if err := run(context.Background(), rulesFS, runOptions{read: namedReader("notes.txt"), jobs: 1}, echoModel{}, s); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if got := out(); got != "" {
+	if got := out.String(); got != "" {
 		t.Errorf("output = %q, want none: the *.go rule does not match notes.txt", got)
 	}
 }
 
 func TestRunMinConfidenceSuppressesLowConfidence(t *testing.T) {
-	stdin(t, "package a\n")
-	out := stdout(t)
+	s, out, _ := testStreams("package a\n")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.7}, 1, false, false); err != nil {
+	if err := run(context.Background(), rulesFS, runOptions{read: namedReader("a.go"), jobs: 1}, confidentModel{0.7}, s); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if got := out(); got != "" {
+	if got := out.String(); got != "" {
 		t.Errorf("output = %q, want none: 0.7 is below the 0.8 threshold", got)
 	}
 }
 
 func TestRunMinConfidenceReportsAtThreshold(t *testing.T) {
-	stdin(t, "package a\n")
-	out := stdout(t)
+	s, out, _ := testStreams("package a\n")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.9}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, runOptions{read: namedReader("a.go"), jobs: 1}, confidentModel{0.9}, s); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
-	if got := out(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
+	if got := out.String(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
 		t.Errorf("output = %q, want a fail: 0.9 is above the 0.8 threshold", got)
 	}
 }
 
 func TestRunMinConfidenceShowsPassWhenAsked(t *testing.T) {
-	stdin(t, "package a\n")
-	out := stdout(t)
+	s, out, _ := testStreams("package a\n")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.7}, 1, true, false); err != nil {
+	if err := run(context.Background(), rulesFS, runOptions{read: namedReader("a.go"), jobs: 1, includePassing: true}, confidentModel{0.7}, s); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if got := out(); !strings.Contains(got, "a.go comments.md noul 30% pass") {
+	if got := out.String(); !strings.Contains(got, "a.go comments.md noul 30% pass") {
 		t.Errorf("output = %q, want a pass at 30%%: below the threshold the finding is a pass", got)
 	}
 }
 
 func TestRunDefaultMinConfidenceReportsAboveMidpoint(t *testing.T) {
-	stdin(t, "package a\n")
-	out := stdout(t)
+	s, out, _ := testStreams("package a\n")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.6}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, runOptions{read: namedReader("a.go"), jobs: 1}, confidentModel{0.6}, s); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
-	if got := out(); !strings.Contains(got, "a.go comments.md noul 60% fail") {
+	if got := out.String(); !strings.Contains(got, "a.go comments.md noul 60% fail") {
 		t.Errorf("output = %q, want a fail: 0.6 is above the default 0.5", got)
 	}
 }
@@ -507,16 +441,15 @@ func TestRunReportsFailedFileAndContinues(t *testing.T) {
 	write(t, dir, "good.go", "ok")
 	write(t, dir, "bad.go", "oversized")
 
-	out := stdout(t)
-	errOut := stderr(t)
+	s, out, errOut := testStreams("")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	err := run(context.Background(), rulesFS, []string{dir}, false, "", pickyModel{bad: "oversized"}, 1, false, false)
+	err := run(context.Background(), rulesFS, runOptions{read: pathsReader([]string{dir}), jobs: 1}, pickyModel{bad: "oversized"}, s)
 	if err == nil {
 		t.Error("run() error = nil, want a failure when a file could not be evaluated")
 	}
 
-	got := out()
+	got := out.String()
 	if !strings.Contains(got, "good.go comments.md noul 90% fail") {
 		t.Errorf("output = %q, want a finding for good.go", got)
 	}
@@ -525,7 +458,7 @@ func TestRunReportsFailedFileAndContinues(t *testing.T) {
 	}
 
 	want := "gallant: " + filepath.Join(dir, "bad.go") + ": input too large"
-	if text := errOut(); !strings.Contains(text, want) {
+	if text := errOut.String(); !strings.Contains(text, want) {
 		t.Errorf("stderr = %q, want %q", text, want)
 	}
 }
@@ -538,16 +471,15 @@ func TestRunReportsProviderFailureOnce(t *testing.T) {
 	write(t, dir, "b.go", "")
 	write(t, dir, "c.go", "")
 
-	_ = stdout(t)
-	errOut := stderr(t)
+	s, _, errOut := testStreams("")
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	err := run(context.Background(), rulesFS, []string{dir}, false, "", providerErrorModel{}, 2, false, false)
+	err := run(context.Background(), rulesFS, runOptions{read: pathsReader([]string{dir}), jobs: 2}, providerErrorModel{}, s)
 	if err == nil {
 		t.Error("run() error = nil, want a failure when files could not be evaluated")
 	}
 
-	text := errOut()
+	text := errOut.String()
 	if n := strings.Count(text, "provider unreachable"); n != 1 {
 		t.Errorf("stderr = %q, want the provider failure once, got %d", text, n)
 	}
@@ -585,13 +517,12 @@ func TestRunWarnsWhenNoRules(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "a.go", "")
 
-	_ = stdout(t)
-	errOut := stderr(t)
+	s, _, errOut := testStreams("")
 
-	if err := run(context.Background(), fstest.MapFS{}, []string{dir}, false, "", echoModel{}, 1, false, false); err != nil {
+	if err := run(context.Background(), fstest.MapFS{}, runOptions{read: pathsReader([]string{dir}), jobs: 1}, echoModel{}, s); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if text := errOut(); !strings.Contains(text, "no rules found") {
+	if text := errOut.String(); !strings.Contains(text, "no rules found") {
 		t.Errorf("stderr = %q, want a warning that no rules were found", text)
 	}
 }
@@ -607,7 +538,7 @@ func TestUnwrapPathDropsSyscallName(t *testing.T) {
 	}
 }
 
-func TestValidateInputs(t *testing.T) {
+func TestParseInputSource(t *testing.T) {
 	tests := map[string]struct {
 		diff           bool
 		assumeFilename string
@@ -623,16 +554,36 @@ func TestValidateInputs(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if err := validateInputs(tt.diff, tt.assumeFilename, tt.args); (err != nil) != tt.wantErr {
-				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
+			read, err := parseInputSource(tt.args, tt.diff, tt.assumeFilename)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseInputSource() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if (read != nil) == tt.wantErr {
+				t.Errorf("parseInputSource() reader = %v with error %v, want a reader only on success", read, err)
 			}
 		})
 	}
 }
 
-func TestValidateInputsRejectsBareInvocation(t *testing.T) {
-	if err := validateInputs(false, "", nil); !errors.Is(err, errNoInput) {
-		t.Errorf("validateInputs() error = %v, want errNoInput", err)
+func TestParseInputSourceRejectsBareInvocation(t *testing.T) {
+	if _, err := parseInputSource(nil, false, ""); !errors.Is(err, errNoInput) {
+		t.Errorf("parseInputSource() error = %v, want errNoInput", err)
+	}
+}
+
+// The reader a parsed diff source returns reads the diff it is given, so the
+// parse-to-delegate wiring is exercised, not just the rejection cases.
+func TestParseInputSourceDiffReadsStdin(t *testing.T) {
+	read, err := parseInputSource(nil, true, "")
+	if err != nil {
+		t.Fatalf("parseInputSource() error = %v", err)
+	}
+	inputs, err := read(func(string) bool { return true }, strings.NewReader(exampleDiff))
+	if err != nil {
+		t.Fatalf("read() error = %v", err)
+	}
+	if len(inputs) != 2 || inputs[0].name != "a.go" || inputs[1].name != "b.go" {
+		t.Errorf("read() = %#v, want a.go and b.go", inputs)
 	}
 }
 
@@ -732,5 +683,359 @@ func write(t *testing.T, dir, name, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
+	}
+}
+
+// mapGetenv returns a getenv that reads from values, so config resolution is
+// tested without mutating the process environment.
+func mapGetenv(values map[string]string) func(string) string {
+	return func(name string) string { return values[name] }
+}
+
+func TestResolveConfigEnvironmentDefaults(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.go", "")
+
+	cfg, err := resolveConfig([]string{dir}, mapGetenv(map[string]string{
+		envProvider: "ollama",
+		envModel:    "nimble",
+		envRules:    "/global/rules",
+	}))
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if cfg.model.provider.Name != "ollama" {
+		t.Errorf("provider = %q, want %q", cfg.model.provider.Name, "ollama")
+	}
+	if cfg.model.name != "nimble" {
+		t.Errorf("model = %q, want %q", cfg.model.name, "nimble")
+	}
+	if cfg.rulesDir != "/global/rules" {
+		t.Errorf("rulesDir = %q, want %q", cfg.rulesDir, "/global/rules")
+	}
+	inputs, err := cfg.run.read(func(string) bool { return true }, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("read() error = %v", err)
+	}
+	if len(inputs) != 1 || inputs[0].name != filepath.Join(dir, "a.go") {
+		t.Errorf("read() = %#v, want the operand's file", inputs)
+	}
+}
+
+func TestResolveConfigRejectsNonPositiveJobs(t *testing.T) {
+	for _, jobs := range []string{"0", "-1"} {
+		t.Run(jobs, func(t *testing.T) {
+			_, err := resolveConfig([]string{"--jobs", jobs, "."}, mapGetenv(nil))
+			var invalid invalidCommand
+			if !errors.As(err, &invalid) {
+				t.Errorf("resolveConfig(--jobs %s) error = %v, want an invalidCommand", jobs, err)
+			}
+			var flagged flagError
+			if errors.As(err, &flagged) {
+				t.Errorf("resolveConfig(--jobs %s) error = %v, want no usage text", jobs, err)
+			}
+		})
+	}
+}
+
+func TestResolveConfigFlagOverridesEnvironment(t *testing.T) {
+	cfg, err := resolveConfig(
+		[]string{"--provider", "opencode", "--model", "jev-1.13", "--rules", "local", "."},
+		mapGetenv(map[string]string{envProvider: "ollama", envModel: "nimble", envRules: "/global/rules"}),
+	)
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if cfg.model.provider.Name != "opencode" || cfg.model.name != "jev-1.13" {
+		t.Errorf("provider, model = %q, %q, want opencode, jev-1.13", cfg.model.provider.Name, cfg.model.name)
+	}
+	if cfg.rulesDir != "local" {
+		t.Errorf("rulesDir = %q, want %q", cfg.rulesDir, "local")
+	}
+}
+
+// An explicitly empty model means the provider's default, not the environment's
+// model, because the flag is present.
+func TestResolveConfigExplicitEmptyFlagBeatsEnvironment(t *testing.T) {
+	cfg, err := resolveConfig(
+		[]string{"--model", "", "."},
+		mapGetenv(map[string]string{envModel: "nimble"}),
+	)
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	p, ok := eval.Lookup(defaultProvider)
+	if !ok {
+		t.Fatalf("provider %q is not registered", defaultProvider)
+	}
+	if cfg.model.name != p.Default {
+		t.Errorf("model = %q, want the provider default %q", cfg.model.name, p.Default)
+	}
+}
+
+func TestResolveConfigEnvironmentFillsSettingsIndependently(t *testing.T) {
+	cfg, err := resolveConfig(
+		[]string{"--provider", "cloudflare", "."},
+		mapGetenv(map[string]string{envModel: "clef", envRules: "/global/rules"}),
+	)
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if cfg.model.provider.Name != "cloudflare" || cfg.model.name != "clef" {
+		t.Errorf("provider, model = %q, %q, want cloudflare, clef", cfg.model.provider.Name, cfg.model.name)
+	}
+	if cfg.rulesDir != "/global/rules" {
+		t.Errorf("rulesDir = %q, want %q", cfg.rulesDir, "/global/rules")
+	}
+}
+
+func TestResolveConfigEmptyEnvironmentIsUnset(t *testing.T) {
+	cfg, err := resolveConfig([]string{"."}, mapGetenv(map[string]string{
+		envProvider: "",
+		envModel:    "",
+	}))
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if cfg.model.provider.Name != defaultProvider {
+		t.Errorf("provider = %q, want %q", cfg.model.provider.Name, defaultProvider)
+	}
+	p, ok := eval.Lookup(defaultProvider)
+	if !ok {
+		t.Fatalf("provider %q is not registered", defaultProvider)
+	}
+	if cfg.model.name != p.Default {
+		t.Errorf("model = %q, want the provider default %q", cfg.model.name, p.Default)
+	}
+}
+
+func TestResolveConfigRejectsBareInvocation(t *testing.T) {
+	if _, err := resolveConfig(nil, mapGetenv(nil)); !errors.Is(err, errNoInput) {
+		t.Errorf("resolveConfig() error = %v, want %v", err, errNoInput)
+	}
+}
+
+func TestResolveConfigRejectsUnknownFlagAsFlagError(t *testing.T) {
+	_, err := resolveConfig([]string{"--nope", "."}, mapGetenv(nil))
+	var invalid flagError
+	if !errors.As(err, &invalid) {
+		t.Errorf("resolveConfig() error = %v, want a flagError", err)
+	}
+}
+
+func TestResolveConfigRejectsUnknownProvider(t *testing.T) {
+	_, err := resolveConfig([]string{"--provider", "nope", "."}, mapGetenv(nil))
+	var invalid invalidCommand
+	if !errors.As(err, &invalid) {
+		t.Errorf("resolveConfig() error = %v, want an invalidCommand", err)
+	}
+}
+
+func TestResolveConfigRunOptions(t *testing.T) {
+	cfg, err := resolveConfig([]string{"--json", "--include-passing", "--jobs", "3", "."}, mapGetenv(nil))
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if !cfg.run.asJSON || !cfg.run.includePassing {
+		t.Errorf("run = %+v, want JSON output that includes passing rules", cfg.run)
+	}
+	if cfg.run.jobs != 3 {
+		t.Errorf("jobs = %d, want 3", cfg.run.jobs)
+	}
+}
+
+func TestResolveModel(t *testing.T) {
+	declared := eval.Provider{Name: "declared", Models: []string{"a", "b"}, Default: "a"}
+	tests := map[string]struct {
+		provider eval.Provider
+		model    string
+		want     string
+		wantErr  bool
+	}{
+		"provider default": {provider: declared, want: "a"},
+		"explicit model":   {provider: declared, model: "b", want: "b"},
+		"unknown declared": {provider: declared, model: "c", wantErr: true},
+		"discovered later": {provider: eval.Provider{Name: "discovered", Default: "d"}, model: "z", want: "z"},
+		"no default":       {provider: eval.Provider{Name: "bare"}, wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			spec, err := resolveModel(tt.provider, tt.model)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveModel() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				var invalid invalidCommand
+				if !errors.As(err, &invalid) {
+					t.Errorf("resolveModel() error = %v, want an invalidCommand", err)
+				}
+				return
+			}
+			if spec.provider.Name != tt.provider.Name || spec.name != tt.want {
+				t.Errorf("resolveModel() = provider %q model %q, want provider %q model %q",
+					spec.provider.Name, spec.name, tt.provider.Name, tt.want)
+			}
+		})
+	}
+}
+
+// stubLister is a model that also offers discovery, so newModel's discovered-set
+// path can be exercised without a provider.
+type stubLister struct {
+	names   []string
+	listErr error
+}
+
+func (stubLister) Evaluate(context.Context, io.Reader, []rules.Rule) ([]eval.Finding, error) {
+	return nil, nil
+}
+
+func (m stubLister) List(context.Context) ([]string, error) {
+	return m.names, m.listErr
+}
+
+func TestNewModel(t *testing.T) {
+	failure := errors.New("missing api key")
+	tests := map[string]struct {
+		provider    eval.Provider
+		model       string
+		wantErr     bool
+		wantInvalid bool
+		wantWarn    bool
+	}{
+		// A provider that declares its models must not be discovered.
+		"declared model": {
+			provider: eval.Provider{
+				Name: "declared", Models: []string{"a"},
+				New: func(string, string, string) (eval.Model, error) {
+					return stubLister{listErr: errors.New("must not discover")}, nil
+				},
+			},
+			model: "a",
+		},
+		"discovered model": {
+			provider: eval.Provider{
+				Name: "discovered",
+				New:  func(string, string, string) (eval.Model, error) { return stubLister{names: []string{"a"}}, nil },
+			},
+			model: "a",
+		},
+		"unknown discovered model": {
+			provider: eval.Provider{
+				Name: "discovered",
+				New:  func(string, string, string) (eval.Model, error) { return stubLister{names: []string{"a"}}, nil },
+			},
+			model:       "b",
+			wantInvalid: true,
+		},
+		"discovery failure warns": {
+			provider: eval.Provider{
+				Name: "discovered",
+				New: func(string, string, string) (eval.Model, error) {
+					return stubLister{listErr: errors.New("offline")}, nil
+				},
+			},
+			model:    "a",
+			wantWarn: true,
+		},
+		// With no declared set and no discovery there is nothing to check.
+		"no model list": {
+			provider: eval.Provider{
+				Name: "bare",
+				New:  func(string, string, string) (eval.Model, error) { return echoModel{}, nil },
+			},
+			model: "anything",
+		},
+		"construction failure": {
+			provider: eval.Provider{
+				Name: "declared", Models: []string{"a"},
+				New: func(string, string, string) (eval.Model, error) { return nil, failure },
+			},
+			model:   "a",
+			wantErr: true,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var warn strings.Builder
+			m, err := newModel(context.Background(), modelSpec{provider: tt.provider, name: tt.model}, mapGetenv(nil), &warn)
+			switch {
+			case tt.wantInvalid:
+				var invalid invalidCommand
+				if !errors.As(err, &invalid) {
+					t.Errorf("newModel() error = %v, want an invalidCommand", err)
+				}
+			case tt.wantErr:
+				if err == nil {
+					t.Fatal("newModel() error = nil, want a construction failure")
+				}
+				var invalid invalidCommand
+				if errors.As(err, &invalid) {
+					t.Errorf("newModel() error = %v, want a construction failure, not an invalidCommand", err)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("newModel() error = %v", err)
+				}
+				if m == nil {
+					t.Error("newModel() model = nil, want a model")
+				}
+			}
+			if got := warn.Len() > 0; got != tt.wantWarn {
+				t.Errorf("warning = %q, wantWarn %v", warn.String(), tt.wantWarn)
+			}
+		})
+	}
+}
+
+func TestDispositionOf(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		want disposition
+	}{
+		"no input":          {err: errNoInput, want: disposition{code: 2, usage: true}},
+		"flag parser":       {err: flagError{errors.New("flag provided but not defined: -nope")}, want: disposition{code: 2, message: "gallant: flag provided but not defined: -nope", usage: true}},
+		"invalid command":   {err: invalidCommand{errors.New("unknown provider \"nope\"")}, want: disposition{code: 2, message: "gallant: unknown provider \"nope\""}},
+		"failed run":        {err: errors.New("boom"), want: disposition{code: 1, message: "gallant: boom"}},
+		"interrupt":         {err: context.Canceled, want: disposition{code: 130, message: "gallant: interrupted"}},
+		"wrapped interrupt": {err: fmt.Errorf("run: %w", context.Canceled), want: disposition{code: 130, message: "gallant: interrupted"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := dispositionOf(tt.err); got != tt.want {
+				t.Errorf("dispositionOf(%v) = %+v, want %+v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintDocRequest(t *testing.T) {
+	tests := map[string]struct {
+		args []string
+		want func(io.Writer)
+	}{
+		"usage":     {args: []string{"--help"}, want: printUsage},
+		"rules":     {args: []string{"-h", "rules"}, want: printRulesHelp},
+		"providers": {args: []string{"--help", "providers"}, want: printProvidersHelp},
+		"man":       {args: []string{"--man"}, want: printMan},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got, want strings.Builder
+			if !printDocRequest(tt.args, &got) {
+				t.Fatalf("printDocRequest(%q) = false, want true", tt.args)
+			}
+			tt.want(&want)
+			if got.String() != want.String() {
+				t.Errorf("printDocRequest(%q) wrote the wrong document", tt.args)
+			}
+		})
+	}
+}
+
+func TestPrintDocRequestIgnoresOperands(t *testing.T) {
+	var got strings.Builder
+	if printDocRequest([]string{"."}, &got) || got.Len() != 0 {
+		t.Errorf("printDocRequest(%q) = true or wrote output, want no request", ".")
 	}
 }
