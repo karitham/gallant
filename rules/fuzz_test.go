@@ -46,7 +46,6 @@ func FuzzParse(f *testing.F) {
 			}
 		}
 		// A parsed rule must be safe to use.
-		_ = rule.Instructions()
 		for _, name := range []string{"", "a.go", "main.go", "a/b/c.md", "."} {
 			_ = rule.Applies(name)
 		}

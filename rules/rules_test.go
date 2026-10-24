@@ -206,33 +206,6 @@ func TestRuleAppliesNoGlobs(t *testing.T) {
 	}
 }
 
-func TestRuleInstructions(t *testing.T) {
-	tests := map[string]struct {
-		rule Rule
-		want string
-	}{
-		"noul is framed as a question": {
-			rule: Rule{Type: TypeNoul, Body: "Prefer common words.\n"},
-			want: "Does this file violate the following rule?\n\nPrefer common words.\n",
-		},
-		"choice is used verbatim": {
-			rule: Rule{Type: TypeChoice, Body: "Pick one.\n"},
-			want: "Pick one.\n",
-		},
-		"score is used verbatim": {
-			rule: Rule{Type: TypeScore, Body: "Rate it.\n"},
-			want: "Rate it.\n",
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			if got := tt.rule.Instructions(); got != tt.want {
-				t.Errorf("Instructions() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	writeRule(t, dir, "a.md", "---\ntype: noul\nappliesTo: \"*.go\"\n---\nfirst\n")

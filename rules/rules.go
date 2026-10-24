@@ -43,7 +43,8 @@ type Rule struct {
 	// reported as failed. It applies to noul rules only; choice and score rules
 	// leave it zero. A noul that declares none defaults to 0.5.
 	MinConfidence float64
-	// Body is everything following the frontmatter, preserved verbatim.
+	// Body is everything following the frontmatter, preserved verbatim. It is
+	// the rule text the model is asked about.
 	Body string
 }
 
@@ -153,16 +154,6 @@ func (r Rule) Applies(name string) bool {
 		}
 	}
 	return false
-}
-
-// Instructions is the text a model is asked about for this rule. A noul body
-// states a rule, so it is framed as a question; choice and score bodies already
-// read as instructions.
-func (r Rule) Instructions() string {
-	if r.Type == TypeNoul {
-		return "Does this file violate the following rule?\n\n" + r.Body
-	}
-	return r.Body
 }
 
 // Load reads every markdown rule from fsys, including subdirectories. Rules are

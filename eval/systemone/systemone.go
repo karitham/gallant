@@ -86,7 +86,7 @@ func newRequest(model, state string, rs []rules.Rule) request {
 		case r.Criteria.Levels != nil:
 			criteria = r.Criteria.Levels
 		}
-		questions[questionID(i)] = question{Type: r.Type, Instructions: r.Instructions(), Criteria: criteria}
+		questions[questionID(i)] = question{Type: r.Type, Instructions: r.Body, Criteria: criteria}
 	}
 	return request{Model: model, State: state, Questions: questions}
 }

@@ -82,8 +82,8 @@ func TestEvaluate(t *testing.T) {
 			}
 			for i, r := range tt.rules {
 				q, ok := sent.Questions[questionID(i)]
-				if !ok || q.Instructions != r.Instructions() {
-					t.Errorf("question %s = %#v, want the instructions of %s", questionID(i), q, r.Path)
+				if !ok || q.Instructions != r.Body {
+					t.Errorf("question %s = %#v, want the body of %s", questionID(i), q, r.Path)
 				}
 			}
 		})
