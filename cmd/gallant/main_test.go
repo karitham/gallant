@@ -190,7 +190,7 @@ func TestEvaluateAllPreservesOrder(t *testing.T) {
 	// results in completion order would surface here.
 	want := []string{"slow", "fast", "medium"}
 	for i, w := range want {
-		if len(results[i].findings) != 1 || results[i].findings[0].Result != w {
+		if len(results[i].findings) != 1 || len(results[i].findings[0].Outcomes) != 1 || results[i].findings[0].Outcomes[0].Result != w {
 			t.Errorf("results[%d] = %#v, want one finding with result %q", i, results[i], w)
 		}
 	}
@@ -244,6 +244,8 @@ const noulRule = "---\nappliesTo: \"*.go\"\ntype: noul\n---\nno useless comments
 // 0.8 is not reported as a failure.
 const noulRuleConfident = "---\nappliesTo: \"*.go\"\ntype: noul\nminConfidence: 0.8\n---\nno useless comments\n"
 
+const choiceRule = "---\nappliesTo: \"*.go\"\ntype: choice\ncriteria:\n  compliant: \"ok\"\n  violation: \"bad\"\n---\njudge the comments\n"
+
 func TestDiffInputsSplitsPerFile(t *testing.T) {
 	inputs, err := diffInputs(strings.NewReader(exampleDiff), func(name string) bool {
 		return strings.HasSuffix(name, ".go")
@@ -285,8 +287,8 @@ func TestRunLintsDiffFromStdin(t *testing.T) {
 			t.Errorf("output = %q, want %q", got, want)
 		}
 	}
-	if n := strings.Count(got, "a.go "); n != 1 {
-		t.Errorf("output = %q, want exactly one evaluation for a.go, got %d", got, n)
+	if n := strings.Count(got, "a.go comments.md noul 90% fail"); n != 1 {
+		t.Errorf("output = %q, want exactly one fail result for a.go, got %d", got, n)
 	}
 }
 
@@ -300,9 +302,17 @@ func (echoModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]
 	}
 	findings := make([]eval.Finding, len(rs))
 	for i, rule := range rs {
-		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: 0.9}
+		findings[i] = noulFinding(rule.Path, 0.9)
 	}
 	return findings, nil
+}
+
+// noulFinding answers a noul rule with the given probability of a violation.
+func noulFinding(path string, violation float64) eval.Finding {
+	return eval.Finding{Rule: path, Type: rules.TypeNoul, Outcomes: []eval.Outcome{
+		{Result: "fail", Confidence: violation},
+		{Result: "pass", Confidence: 1 - violation},
+	}}
 }
 
 // confidentModel answers every noul rule with the same confidence, so a rule's
@@ -315,7 +325,7 @@ func (m confidentModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Ru
 	}
 	findings := make([]eval.Finding, len(rs))
 	for i, rule := range rs {
-		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: m.confidence}
+		findings[i] = noulFinding(rule.Path, m.confidence)
 	}
 	return findings, nil
 }
@@ -335,7 +345,7 @@ func (m pickyModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) 
 	}
 	findings := make([]eval.Finding, len(rs))
 	for i, rule := range rs {
-		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeNoul, Confidence: 0.9}
+		findings[i] = noulFinding(rule.Path, 0.9)
 	}
 	return findings, nil
 }
@@ -448,6 +458,44 @@ func TestRunAssumeFilenameSelectsRules(t *testing.T) {
 	}
 }
 
+// choiceModel answers every choice rule with two results, so a run can be shown
+// to report all of them rather than only the most likely.
+type choiceModel struct{}
+
+func (choiceModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return nil, err
+	}
+	findings := make([]eval.Finding, len(rs))
+	for i, rule := range rs {
+		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeChoice, Outcomes: []eval.Outcome{
+			{Result: "violation", Confidence: 0.75},
+			{Result: "compliant", Confidence: 0.25},
+		}}
+	}
+	return findings, nil
+}
+
+// A choice reports every option, not only the most likely one.
+func TestRunReportsEveryChoiceOutcome(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(choiceRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", choiceModel{}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	got := out()
+	for _, want := range []string{
+		"a.go comments.md choice 75% violation",
+		"a.go comments.md choice 25% compliant",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestRunMinConfidenceSuppressesLowConfidence(t *testing.T) {
 	stdin(t, "package a\n")
 	out := stdout(t)
@@ -469,8 +517,11 @@ func TestRunMinConfidenceReportsAtThreshold(t *testing.T) {
 	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.9}, 1, false, false); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if got := out(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
-		t.Errorf("output = %q, want a fail: 0.9 is above the 0.8 threshold", got)
+	got := out()
+	for _, want := range []string{"a.go comments.md noul 90% fail", "a.go comments.md noul 10% pass"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want %q", got, want)
+		}
 	}
 }
 
@@ -706,7 +757,7 @@ func (m *delayModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule)
 		return nil, ctx.Err()
 	case <-timer.C:
 	}
-	return []eval.Finding{{Result: string(b)}}, nil
+	return []eval.Finding{{Outcomes: []eval.Outcome{{Result: string(b)}}}}, nil
 }
 
 // errorModel always fails.

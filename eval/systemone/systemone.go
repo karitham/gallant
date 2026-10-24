@@ -11,13 +11,16 @@ package systemone
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -106,23 +109,100 @@ func findings(res response, rs []rules.Rule) ([]eval.Finding, error) {
 	return out, nil
 }
 
+// finding maps an answer to every outcome the model weighed, most likely
+// first. Choice and score answers carry a probability for each option or level;
+// a noul carries a single probability, whose two outcomes are fail and pass.
 func finding(r rules.Rule, a answer) eval.Finding {
-	f := eval.Finding{Rule: r.Path, Type: r.Type}
+	var outcomes []eval.Outcome
 	switch r.Type {
 	case rules.TypeChoice:
-		f.Result = a.Choice
-		f.Confidence = a.Confidence
+		outcomes = choiceOutcomes(a)
 	case rules.TypeScore:
-		f.Confidence = a.Confidence
-		if i := int(a.Score); i >= 0 && i < len(r.Criteria.Levels) {
-			f.Result = r.Criteria.Levels[i]
-		} else {
-			f.Result = fmt.Sprintf("%g", a.Score)
-		}
+		outcomes = scoreOutcomes(r, a)
 	default:
-		f.Confidence = a.Noul
+		outcomes = []eval.Outcome{
+			{Result: "fail", Confidence: a.Noul},
+			{Result: "pass", Confidence: roundProbability(1 - a.Noul)},
+		}
 	}
-	return f
+	return eval.Finding{Rule: r.Path, Type: r.Type, Outcomes: outcomes}
+}
+
+// roundProbability trims binary floating-point noise from a derived probability,
+// so a noul's complement (1 - 0.9) reads as 0.1 rather than 0.09999999999999998.
+func roundProbability(p float64) float64 {
+	return math.Round(p*1e4) / 1e4
+}
+
+// choiceOutcomes returns a result for every option, most likely first. Equal
+// probabilities keep the options' alphabetical order so a run is reproducible.
+func choiceOutcomes(a answer) []eval.Outcome {
+	if len(a.Probabilities) == 0 {
+		return []eval.Outcome{{Result: a.Choice, Confidence: a.Confidence}}
+	}
+	options := make([]string, 0, len(a.Probabilities))
+	for option := range a.Probabilities {
+		options = append(options, option)
+	}
+	slices.Sort(options)
+	out := make([]eval.Outcome, len(options))
+	for i, option := range options {
+		out[i] = eval.Outcome{Result: option, Confidence: a.Probabilities[option]}
+	}
+	sortByLikelihood(out)
+	return out
+}
+
+// scoreOutcomes returns a result for every level, most likely first. Levels are
+// keyed by their number; a number the rubric does not name is kept as it is so
+// the distribution stays complete.
+func scoreOutcomes(r rules.Rule, a answer) []eval.Outcome {
+	if len(a.Probabilities) == 0 {
+		return []eval.Outcome{{Result: scoreLabel(r, int(a.Score)), Confidence: a.Confidence}}
+	}
+	levels := make([]string, 0, len(a.Probabilities))
+	for level := range a.Probabilities {
+		levels = append(levels, level)
+	}
+	slices.SortFunc(levels, compareLevels)
+	out := make([]eval.Outcome, len(levels))
+	for i, level := range levels {
+		label := level
+		if n, err := strconv.Atoi(level); err == nil {
+			label = scoreLabel(r, n)
+		}
+		out[i] = eval.Outcome{Result: label, Confidence: a.Probabilities[level]}
+	}
+	sortByLikelihood(out)
+	return out
+}
+
+// scoreLabel names level n, falling back to its number when the rubric has no
+// such level.
+func scoreLabel(r rules.Rule, n int) string {
+	if n >= 0 && n < len(r.Criteria.Levels) {
+		return r.Criteria.Levels[n]
+	}
+	return strconv.Itoa(n)
+}
+
+// compareLevels orders level keys by number, falling back to text for a key
+// that is not a number.
+func compareLevels(a, b string) int {
+	ai, aerr := strconv.Atoi(a)
+	bi, berr := strconv.Atoi(b)
+	if aerr == nil && berr == nil {
+		return cmp.Compare(ai, bi)
+	}
+	return strings.Compare(a, b)
+}
+
+// sortByLikelihood puts the most probable outcome first. It is stable, so
+// equal probabilities keep the order they were gathered in.
+func sortByLikelihood(out []eval.Outcome) {
+	slices.SortStableFunc(out, func(a, b eval.Outcome) int {
+		return cmp.Compare(b.Confidence, a.Confidence)
+	})
 }
 
 // HTTP returns a Post that sends requests to the System One endpoint under
@@ -178,13 +258,17 @@ type response struct {
 }
 
 // answer is the response for one question. Noul is the probability that the
-// question is true; Choice is the chosen option; Score is the chosen level.
+// question is true; Choice and Score are the most likely option and level,
+// Confidences summarize how spread their probabilities are, and Probabilities
+// holds the full distribution (option to probability, or level number to
+// probability).
 type answer struct {
-	Type       rules.Type `json:"type"`
-	Noul       float64    `json:"noul"`
-	Choice     string     `json:"choice"`
-	Score      float64    `json:"score"`
-	Confidence float64    `json:"confidence"`
+	Type          rules.Type         `json:"type"`
+	Noul          float64            `json:"noul"`
+	Choice        string             `json:"choice"`
+	Score         float64            `json:"score"`
+	Confidence    float64            `json:"confidence"`
+	Probabilities map[string]float64 `json:"probabilities"`
 }
 
 // requestCause strips the method-and-URL wrapper net/http puts around a

@@ -7,8 +7,8 @@ Usage:
 
 Description:
   gallant checks files against rules. A rule gives one question to a decision
-  model, and gallant prints one line for each answer. Rules are markdown files
-  in .agents/gallant.
+  model, and gallant prints one line for each result it reports. Rules are
+  markdown files in .agents/gallant.
 
 Input:
   With no --diff or --assume-filename, gallant checks the files and directories
@@ -33,12 +33,17 @@ Options:
   -h, --help              print this help and exit
 
 Output:
-  gallant prints one finding per line in a fixed, space-separated format:
+  gallant prints one result per line in a fixed, space-separated format:
 
     <file> <rule> <type> <confidence> <result>
 
-  The format is line-oriented: every newline is escaped, so one finding stays on
-  one line. For machine consumption, --json prints an array of objects instead:
+  Confidence is the probability of that result, the same for every rule type.
+  Every outcome the model weighed is printed: fail and pass for a noul, every
+  option for a choice (most likely first), and every level for a score (most
+  likely first). A noul is reported only when its probability of a violation
+  clears minConfidence, or when --include-passing is given. The format is
+  line-oriented: every newline is escaped, so one result stays on one line. For
+  machine consumption, --json prints an array of objects instead:
 
     gallant --json
 

@@ -41,20 +41,32 @@ func TestEvaluate(t *testing.T) {
 			},
 			reply: `{"answers":{"q0":{"type":"noul","noul":0.9},"q1":{"type":"noul","noul":0.1}}}`,
 			want: []eval.Finding{
-				{Rule: "a.md", Type: rules.TypeNoul, Confidence: 0.9},
-				{Rule: "b.md", Type: rules.TypeNoul, Confidence: 0.1},
+				{Rule: "a.md", Type: rules.TypeNoul, Outcomes: []eval.Outcome{{Result: "fail", Confidence: 0.9}, {Result: "pass", Confidence: 0.1}}},
+				{Rule: "b.md", Type: rules.TypeNoul, Outcomes: []eval.Outcome{{Result: "fail", Confidence: 0.1}, {Result: "pass", Confidence: 0.9}}},
 			},
 		},
 		{
-			name: "choice and score",
+			name: "choice and score report every outcome",
+			rules: []rules.Rule{
+				{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
+				{Path: "r.md", Type: rules.TypeScore, Criteria: rules.Criteria{Levels: []string{"low", "mid", "high"}}},
+			},
+			reply: `{"answers":{"q0":{"type":"choice","choice":"violation","confidence":0.82,"probabilities":{"compliant":0.18,"violation":0.82}},"q1":{"type":"score","score":1,"confidence":0.9,"probabilities":{"0":0.05,"1":0.9,"2":0.05}}}}`,
+			want: []eval.Finding{
+				{Rule: "s.md", Type: rules.TypeChoice, Outcomes: []eval.Outcome{{Result: "violation", Confidence: 0.82}, {Result: "compliant", Confidence: 0.18}}},
+				{Rule: "r.md", Type: rules.TypeScore, Outcomes: []eval.Outcome{{Result: "mid", Confidence: 0.9}, {Result: "low", Confidence: 0.05}, {Result: "high", Confidence: 0.05}}},
+			},
+		},
+		{
+			name: "answers without probabilities fall back to the chosen value",
 			rules: []rules.Rule{
 				{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
 				{Path: "r.md", Type: rules.TypeScore, Criteria: rules.Criteria{Levels: []string{"low", "mid", "high"}}},
 			},
 			reply: `{"answers":{"q0":{"type":"choice","choice":"violation","confidence":0.82},"q1":{"type":"score","score":1,"confidence":0.9}}}`,
 			want: []eval.Finding{
-				{Rule: "s.md", Type: rules.TypeChoice, Result: "violation", Confidence: 0.82},
-				{Rule: "r.md", Type: rules.TypeScore, Result: "mid", Confidence: 0.9},
+				{Rule: "s.md", Type: rules.TypeChoice, Outcomes: []eval.Outcome{{Result: "violation", Confidence: 0.82}}},
+				{Rule: "r.md", Type: rules.TypeScore, Outcomes: []eval.Outcome{{Result: "mid", Confidence: 0.9}}},
 			},
 		},
 		{
@@ -63,7 +75,7 @@ func TestEvaluate(t *testing.T) {
 			name:  "nested path",
 			rules: []rules.Rule{{Path: "go/style.md", Type: rules.TypeNoul, Body: "A"}},
 			reply: `{"answers":{"q0":{"type":"noul","noul":0.2}}}`,
-			want:  []eval.Finding{{Rule: "go/style.md", Type: rules.TypeNoul, Confidence: 0.2}},
+			want:  []eval.Finding{{Rule: "go/style.md", Type: rules.TypeNoul, Outcomes: []eval.Outcome{{Result: "fail", Confidence: 0.2}, {Result: "pass", Confidence: 0.8}}}},
 		},
 	}
 	for _, tt := range tests {

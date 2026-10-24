@@ -15,9 +15,11 @@ gallant --provider opencode --model jev-1.13-free --json \
   --rules examples/json/rules examples/json/sample.go
 ```
 
-Each finding is an object with `file`, `rule`, `type`, `result`, and
-`confidence`. Without `--json`, gallant prints the same findings as lines; see
-the [multiple files example](../multiple).
+Each result is an object with `file`, `rule`, `type`, `result`, and
+`confidence`. Confidence is the probability of that result. Every outcome the
+model weighed is emitted: fail and pass for a noul, every option for a choice,
+every level for a score. Without `--json`, gallant prints the same results as
+lines; see the [multiple files example](../multiple).
 
 The file is evaluated by a model, so the API key is required.
 

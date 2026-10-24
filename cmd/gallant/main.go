@@ -185,28 +185,27 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 			continue
 		}
 		for _, finding := range res.findings {
-			result, confidence := finding.Result, finding.Confidence
+			// A noul is reported only when its probability of a violation clears
+			// the rule's threshold, or when passing findings are asked for. Once
+			// reported, every outcome is emitted, as for any other type.
 			if finding.Type == rules.TypeNoul {
 				min, ok := minConfidence[finding.Rule]
 				if !ok {
 					min = defaultMinConfidence
 				}
-				if finding.Confidence <= min {
-					if !includePassing {
-						continue
-					}
-					result, confidence = "pass", 1-finding.Confidence
-				} else {
-					result, confidence = "fail", finding.Confidence
+				if outcome(finding.Outcomes, "fail").Confidence <= min && !includePassing {
+					continue
 				}
 			}
-			records = append(records, record{
-				File:       inputs[i].name,
-				Rule:       finding.Rule,
-				Type:       finding.Type,
-				Result:     result,
-				Confidence: confidence,
-			})
+			for _, outcome := range finding.Outcomes {
+				records = append(records, record{
+					File:       inputs[i].name,
+					Rule:       finding.Rule,
+					Type:       finding.Type,
+					Result:     outcome.Result,
+					Confidence: outcome.Confidence,
+				})
+			}
 		}
 	}
 	for _, msg := range providerOrder {
@@ -238,9 +237,21 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	return nil
 }
 
-// record is one finding as it is emitted. Confidence is the confidence in
-// Result: for a noul it is the probability of the reported pass or fail, and for
-// a choice or score it is the model's confidence in the chosen option or level.
+// outcome returns the outcome named result, or a zero one when the model did not
+// offer it.
+func outcome(outcomes []eval.Outcome, result string) eval.Outcome {
+	for _, o := range outcomes {
+		if o.Result == result {
+			return o
+		}
+	}
+	return eval.Outcome{Result: result}
+}
+
+// record is one outcome of one finding as it is emitted. Confidence is the
+// probability of Result, the same meaning for every rule type. A finding emits
+// one record per outcome: both fail and pass for a noul, every option for a
+// choice, and every level for a score, most likely first.
 type record struct {
 	File       string     `json:"file"`
 	Rule       string     `json:"rule"`

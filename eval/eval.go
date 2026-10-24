@@ -8,14 +8,21 @@ import (
 	"github.com/madxmike/gallant/rules"
 )
 
-// Finding is one rule's result for an input. For a noul, Confidence is the
-// probability the rule is violated; for a choice or score, Result is the chosen
-// option or level and Confidence is the model's confidence in it.
-type Finding struct {
-	Rule       string
-	Type       rules.Type
-	Confidence float64
+// Outcome is one possible result for a rule and the probability the model gives
+// it. Confidence means the same thing for every rule type: the probability that
+// this result is the answer.
+type Outcome struct {
 	Result     string
+	Confidence float64
+}
+
+// Finding is one rule's answer for an input: every result the model weighed,
+// most likely first. A noul has two outcomes (fail and pass), a choice one per
+// option, and a score one per level.
+type Finding struct {
+	Rule     string
+	Type     rules.Type
+	Outcomes []Outcome
 }
 
 // Model evaluates an input stream against the rules it is given, returning its
