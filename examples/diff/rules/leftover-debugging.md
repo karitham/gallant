@@ -2,6 +2,8 @@
 appliesTo: "*.go"
 type: noul
 ---
+Does this file violate the following rule?
+
 # No debugging leftovers
 
 A change should not carry debugging scaffolding: a print added to trace a value,

@@ -2,6 +2,8 @@
 appliesTo: "*.go"
 type: noul
 ---
+Does this file violate the following rule?
+
 # Interfaces belong to the consumer
 
 Define an interface in the package that consumes it, not in the package that

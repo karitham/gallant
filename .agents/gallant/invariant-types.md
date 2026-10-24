@@ -2,6 +2,8 @@
 appliesTo: "*.go"
 type: noul
 ---
+Does this file violate the following rule?
+
 # Encode invariants in types
 
 When a value has a rule about what it may be, give it a type that can only hold

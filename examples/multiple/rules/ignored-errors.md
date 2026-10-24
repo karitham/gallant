@@ -2,6 +2,8 @@
 appliesTo: "*.go"
 type: noul
 ---
+Does this file violate the following rule?
+
 # Ignored errors
 
 A returned error that is discarded hides a failure. Assigning a call's error to

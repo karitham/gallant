@@ -2,6 +2,8 @@
 appliesTo: "*.msg"
 type: noul
 ---
+Does this commit message violate the following rule?
+
 # Commit messages say what and why
 
 A commit message should let someone who was not there understand the change

@@ -2,6 +2,8 @@
 appliesTo: "*.go"
 type: noul
 ---
+Does this file violate the following rule?
+
 # Useless comments
 
 A comment should explain something the code cannot: the intent behind a choice,
