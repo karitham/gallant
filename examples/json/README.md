@@ -11,7 +11,7 @@ Set an API key, then run from the repository root:
 
 ```sh
 export OPENCODE_API_KEY=...
-gallant --provider opencode --model jev-1.13-free --json \
+gallant --provider opencode --model jev-1.13 --json \
   --rules examples/json/rules examples/json/sample.go
 ```
 
@@ -20,8 +20,8 @@ weighed is listed in `results`, each with a `result` name and a `confidence`,
 the probability of that result: fail and pass for a noul, every option for a
 choice, every level for a score. A rule that declares a violation condition
 also carries `verdict` (`fail` or `pass`) and `reason`, the clause that decided
-it. Without `--json`, gallant prints the same findings as lines; see the
-[multiple files example](../multiple).
+it; see the [violation example](../violation). Without `--json`, gallant prints
+the same findings as lines; see the [multiple files example](../multiple).
 
 The file is evaluated by a model, so the API key is required.
 

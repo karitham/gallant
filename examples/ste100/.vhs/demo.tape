@@ -15,7 +15,7 @@ Enter
 Sleep 3s
 Show
 
-Type "gallant --provider opencode --model jev-1.13-free --rules examples/ste100/rules examples/ste100/doc.md"
+Type "gallant --provider opencode --model jev-1.13 --rules examples/ste100/rules examples/ste100/doc.md"
 Enter
 # Let the model answer, then hold on the findings before the GIF ends.
 Sleep 3s

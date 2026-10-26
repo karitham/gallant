@@ -1,7 +1,8 @@
 # Comments
 
 Classifies the comments in a Go file. This uses a **choice** rule, and reports
-a violation when the comments are mostly useless.
+a violation when the comments are mostly useless. See the
+[violation example](../violation) for how the rule decides when to fail.
 
 ![demo](.vhs/demo.gif)
 
@@ -12,7 +13,7 @@ Set an API key, then run from the repository root:
 
 ```sh
 export OPENCODE_API_KEY=...
-gallant --provider opencode --model jev-1.13-free \
+gallant --provider opencode --model jev-1.13 \
   --rules examples/comments/rules examples/comments/sample.go
 ```
 

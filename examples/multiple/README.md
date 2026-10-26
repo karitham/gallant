@@ -13,7 +13,7 @@ Set an API key, then run from the repository root:
 
 ```sh
 export OPENCODE_API_KEY=...
-gallant --provider opencode --model jev-1.13-free \
+gallant --provider opencode --model jev-1.13 \
   --rules examples/multiple/rules examples/multiple
 ```
 

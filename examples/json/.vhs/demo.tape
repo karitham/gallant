@@ -1,9 +1,9 @@
 Output examples/json/.vhs/demo.gif
 
 Set Shell bash
-Set FontSize 20
+Set FontSize 16
 Set Width 1200
-Set Height 520
+Set Height 640
 Set Padding 20
 Set TypingSpeed 10ms
 Set CursorBlink false
@@ -15,7 +15,7 @@ Enter
 Sleep 3s
 Show
 
-Type "gallant --provider opencode --model jev-1.13-free --json --rules examples/json/rules examples/json/sample.go"
+Type "gallant --provider opencode --model jev-1.13 --json --rules examples/json/rules examples/json/sample.go"
 Enter
 # Let the model answer, then hold on the findings before the GIF ends.
 Sleep 3s

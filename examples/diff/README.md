@@ -12,7 +12,7 @@ named by its path in the diff, so rules match the file they describe.
 
 ```sh
 export OPENCODE_API_KEY=...
-git diff HEAD~1 | gallant --provider opencode --model jev-1.13-free \
+git diff HEAD~1 | gallant --provider opencode --model jev-1.13 \
   --rules examples/diff/rules --diff
 ```
 
@@ -20,7 +20,7 @@ The demo uses a saved diff instead, so it does not depend on the repository
 state:
 
 ```sh
-cat examples/diff/change.diff | gallant --provider opencode --model jev-1.13-free \
+cat examples/diff/change.diff | gallant --provider opencode --model jev-1.13 \
   --rules examples/diff/rules --diff
 ```
 

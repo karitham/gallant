@@ -40,6 +40,8 @@ go install github.com/madxmike/gallant/cmd/gallant@v0.1.0
 
 To use gallant you will need a set of files and rules. By default gallant will look in the relative `.agents/gallant` for rules. You can then run `gallant .` to apply the rules to all files in the relative path. For more information see `gallant --help`
 
+[Examples](examples) holds runnable rules, sample files, and terminal recordings, from comment classification to JSON output.
+
 For information on making Rules see `gallant --help rules`
 
 For information on available providers see `gallant --help providers`
@@ -63,11 +65,17 @@ Gallant is not intended to encompass every possible decision model provider. If 
 #### Recording Examples
 
 The examples ship terminal recordings generated with
-[VHS](https://github.com/charmbracelet/vhs). Re-recording them requires VHS to
-be installed:
+[VHS](https://github.com/charmbracelet/vhs). Re-recording one requires VHS, an
+`OPENCODE_API_KEY`, and a model that is not rate limited:
 
 ```sh
 OPENCODE_API_KEY=... vhs examples/ste100/.vhs/demo.tape
+```
+
+To re-record every example and commit the GIFs:
+
+```sh
+OPENCODE_API_KEY=... examples/rerecord.sh
 ```
 
 #### Fuzzing the Parsers

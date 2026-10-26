@@ -15,7 +15,7 @@ Enter
 Sleep 3s
 Show
 
-Type "gallant --provider opencode --model jev-1.13-free --rules examples/readability/rules examples/readability/sample.go"
+Type "gallant --provider opencode --model jev-1.13 --rules examples/readability/rules examples/readability/sample.go"
 Enter
 # Let the model answer, then hold on the findings before the GIF ends.
 Sleep 3s

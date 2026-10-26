@@ -13,7 +13,7 @@ way — here, straight from git:
 
 ```sh
 export OPENCODE_API_KEY=...
-git log -1 --format=%B | gallant --provider opencode --model jev-1.13-free \
+git log -1 --format=%B | gallant --provider opencode --model jev-1.13 \
   --rules examples/stdin/rules --assume-filename commit.msg
 ```
 
@@ -21,7 +21,7 @@ The demo uses a saved message instead, so it does not depend on the repository
 state:
 
 ```sh
-cat examples/stdin/message.txt | gallant --provider opencode --model jev-1.13-free \
+cat examples/stdin/message.txt | gallant --provider opencode --model jev-1.13 \
   --rules examples/stdin/rules --assume-filename commit.msg
 ```
 

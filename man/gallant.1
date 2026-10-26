@@ -139,11 +139,13 @@ Frontmatter fields:
                      unless:        # any one of these cancels it
                        useful: 0.7
 
-                 Each entry names an option or level and the probability above
-                 which it fires. The rule fails when some if entry fires and no
-                 unless entry does. A passing rule is hidden unless
-                 --include-passing is given. A noul states its threshold with
-                 minConfidence instead, so it cannot declare a violation.
+                 Each entry names an option or level and the probability it must
+                 be above to fire. The rule fails when some if entry fires and
+                 no unless entry does. gallant prints a verdict line for the
+                 rule, such as "fail (useless 0.95 > 0.5)", before the
+                 outcomes. A passing rule is hidden unless --include-passing is
+                 given. A noul states its threshold with minConfidence instead,
+                 so it cannot declare a violation.
 
   minConfidence  For noul only. The probability of a violation above which the
                  rule fails, from 0 to 1 (default 0.5).
