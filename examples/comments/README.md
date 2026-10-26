@@ -1,6 +1,7 @@
 # Comments
 
-Classifies the comments in a Go file. This uses a **choice** rule.
+Classifies the comments in a Go file. This uses a **choice** rule, and reports
+a violation when the comments are mostly useless.
 
 ![demo](.vhs/demo.gif)
 

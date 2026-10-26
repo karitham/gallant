@@ -1,6 +1,7 @@
 # Readability
 
-Rates how hard a Go file is to read. This uses a **score** rule.
+Rates how hard a Go file is to read. This uses a **score** rule, and reports a
+violation unless the file is easy to read.
 
 ![demo](.vhs/demo.gif)
 

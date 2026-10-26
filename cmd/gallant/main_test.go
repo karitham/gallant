@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -245,6 +246,10 @@ const noulRule = "---\nappliesTo: \"*.go\"\ntype: noul\n---\nno useless comments
 const noulRuleConfident = "---\nappliesTo: \"*.go\"\ntype: noul\nminConfidence: 0.8\n---\nno useless comments\n"
 
 const choiceRule = "---\nappliesTo: \"*.go\"\ntype: choice\ncriteria:\n  compliant: \"ok\"\n  violation: \"bad\"\n---\njudge the comments\n"
+
+// violationRule is choiceRule with a violation condition, so a run can be shown
+// to report a verdict instead of leaving the probabilities to the reader.
+const violationRule = "---\nappliesTo: \"*.go\"\ntype: choice\ncriteria:\n  useful: \"explains intent\"\n  useless: \"restates the code\"\nviolation:\n  if:\n    useless: 0.5\n---\njudge the comments\n"
 
 func TestDiffInputsSplitsPerFile(t *testing.T) {
 	inputs, err := diffInputs(strings.NewReader(exampleDiff), func(name string) bool {
@@ -493,6 +498,107 @@ func TestRunReportsEveryChoiceOutcome(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("output = %q, want %q", got, want)
 		}
+	}
+}
+
+// predicateModel answers every choice rule with a useless probability and its
+// complement, so a violation condition can be shown to decide the verdict.
+type predicateModel struct{ useless float64 }
+
+func (m predicateModel) Evaluate(ctx context.Context, r io.Reader, rs []rules.Rule) ([]eval.Finding, error) {
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return nil, err
+	}
+	findings := make([]eval.Finding, len(rs))
+	for i, rule := range rs {
+		findings[i] = eval.Finding{Rule: rule.Path, Type: rules.TypeChoice, Outcomes: []eval.Outcome{
+			{Result: "useless", Confidence: m.useless},
+			{Result: "useful", Confidence: 1 - m.useless},
+		}}
+	}
+	return findings, nil
+}
+
+func TestRunReportsViolationVerdict(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(violationRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.95}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	got := out()
+	for _, want := range []string{
+		"a.go comments.md choice fail (useless 0.95 > 0.5)\n",
+		"a.go comments.md choice 95% useless\n",
+		"a.go comments.md choice 5% useful\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want %q", got, want)
+		}
+	}
+	if strings.Index(got, "fail (") > strings.Index(got, "95% useless") {
+		t.Errorf("output = %q, want the verdict before its results", got)
+	}
+}
+
+func TestRunHidesPassingViolation(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(violationRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.2}, 1, false, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got := out(); got != "" {
+		t.Errorf("output = %q, want none: 0.2 is below the 0.5 threshold", got)
+	}
+}
+
+func TestRunShowsPassingViolationWhenAsked(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(violationRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.2}, 1, true, false); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	got := out()
+	for _, want := range []string{
+		"a.go comments.md choice pass (no if result above its threshold)\n",
+		"a.go comments.md choice 20% useless\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestRunJSONGroupsResultsByFinding(t *testing.T) {
+	stdin(t, "package a\n")
+	out := stdout(t)
+
+	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(violationRule)}}
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.95}, 1, false, true); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	var got []record
+	if err := json.Unmarshal([]byte(out()), &got); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("output holds %d objects, want 1: %#v", len(got), got)
+	}
+	r := got[0]
+	if r.Verdict != "fail" || r.Reason != "useless 0.95 > 0.5" {
+		t.Errorf("Verdict, Reason = %q, %q; want fail, %q", r.Verdict, r.Reason, "useless 0.95 > 0.5")
+	}
+	if len(r.Results) != 2 {
+		t.Fatalf("Results = %#v, want two outcomes", r.Results)
+	}
+	if r.Results[0] != (eval.Outcome{Result: "useless", Confidence: 0.95}) {
+		t.Errorf("Results[0] = %#v, want useless at 0.95", r.Results[0])
 	}
 }
 

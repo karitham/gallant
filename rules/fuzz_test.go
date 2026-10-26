@@ -21,6 +21,8 @@ func FuzzParse(f *testing.F) {
 		"---\ntype: noul\nminConfidence: 2\n---\n",
 		"---\nappliesTo: \"[\"\ntype: noul\n---\n",
 		"---\ntype: noul\nappliesTo: [\"*.go\", '*.ts']\n---\n---\n",
+		"---\ntype: choice\ncriteria:\n  a: one\nviolation:\n  if:\n    a: 0.5\n---\nbody\n",
+		"---\ntype: score\ncriteria:\n  - low\n  - high\nviolation:\n  if:\n    high: 0.5\n  unless:\n    low: 0.5\n---\nbody\n",
 	} {
 		f.Add([]byte(seed))
 	}
@@ -37,6 +39,24 @@ func FuzzParse(f *testing.F) {
 		}
 		if rule.Type == TypeNoul && (rule.MinConfidence < 0 || rule.MinConfidence > 1) {
 			t.Fatalf("noul minConfidence out of range: %v", rule.MinConfidence)
+		}
+		// A violation condition must be decidable: it only belongs to a choice or
+		// score, names at least one trigger, and every threshold is a probability.
+		if v := rule.Violation; v != nil {
+			if rule.Type == TypeNoul {
+				t.Fatal("noul parsed with a violation condition")
+			}
+			if len(v.If) == 0 {
+				t.Fatal("violation parsed with no if entries")
+			}
+			for _, thresholds := range []map[string]float64{v.If, v.Unless} {
+				for name, p := range thresholds {
+					if p < 0 || p > 1 {
+						t.Fatalf("violation threshold for %q out of range: %v", name, p)
+					}
+				}
+			}
+			_, _ = rule.Violation.Fails(map[string]float64{"a": 1})
 		}
 		// Every accepted glob must be a valid pattern, or the rule could never
 		// match and the parse would have been misleading.

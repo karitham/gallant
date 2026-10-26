@@ -27,7 +27,7 @@ Options:
   --rules dir             directory of lint rules (default ".agents/gallant")
   --jobs n                files to check concurrently (default 8)
   --include-passing       also print the rules the file passes
-  --json                  print the answers as a JSON array
+  --json                  print the findings as a JSON array
   --diff                  check a unified diff read from standard input
   --assume-filename name  check one file read from standard input under this name
   -h, --help              print this help and exit
@@ -41,11 +41,25 @@ Output:
   Every outcome the model weighed is printed: fail and pass for a noul, every
   option for a choice (most likely first), and every level for a score (most
   likely first). A noul is reported only when its probability of a violation
-  clears minConfidence, or when --include-passing is given. The format is
-  line-oriented: every newline is escaped, so one result stays on one line. For
-  machine consumption, --json prints an array of objects instead:
+  clears minConfidence, or when --include-passing is given.
 
-    gallant --json
+  A choice or score whose rule declares a violation condition prints a verdict
+  line before its outcomes:
+
+    <file> <rule> <type> fail (useless 0.95 > 0.5)
+
+  The parenthetical names the clause that decided the verdict. A passing
+  verdict is printed only with --include-passing, like a passing noul.
+
+  The format is line-oriented: every newline is escaped, so one result stays on
+  one line. For machine consumption, --json prints one object per finding:
+
+    {"file": "a.go", "rule": "comments.md", "type": "choice",
+     "verdict": "fail", "reason": "useless 0.95 > 0.5",
+     "results": [{"result": "useless", "confidence": 0.95}]}
+
+  Every object has file, rule, type, and results. verdict and reason appear
+  when the rule declares a violation condition.
 
   A file that cannot be checked (for example, one too large for the model) is
   reported on standard error as "gallant: <file>: <reason>". The other files are

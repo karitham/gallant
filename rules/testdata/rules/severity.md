@@ -4,6 +4,9 @@ type: choice
 criteria:
   compliant: "The document follows the rule."
   violation: "The document breaks the rule."
+violation:
+  if:
+    violation: 0.5
 ---
 # Headings step down one level
 

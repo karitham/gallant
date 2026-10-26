@@ -151,19 +151,110 @@ func TestParseMinConfidence(t *testing.T) {
 	}
 }
 
+func TestParseViolation(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want *Violation
+	}{
+		"choice": {
+			src: "---\ntype: choice\ncriteria:\n  useful: \"explains intent\"\n  useless: \"restates the code\"\nviolation:\n  if:\n    useless: 0.5\n  unless:\n    useful: 0.7\n---\nbody\n",
+			want: &Violation{
+				If:     map[string]float64{"useless": 0.5},
+				Unless: map[string]float64{"useful": 0.7},
+			},
+		},
+		"score": {
+			src:  "---\ntype: score\ncriteria:\n  - \"Easy\"\n  - \"Hard\"\nviolation:\n  if:\n    Hard: 0.6\n---\nbody\n",
+			want: &Violation{If: map[string]float64{"Hard": 0.6}},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rule, err := Parse([]byte(tt.src))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if !reflect.DeepEqual(rule.Violation, tt.want) {
+				t.Errorf("Violation = %#v, want %#v", rule.Violation, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseViolationAbsent(t *testing.T) {
+	rule, err := Parse([]byte("---\ntype: choice\ncriteria:\n  a: \"one\"\n---\nbody\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if rule.Violation != nil {
+		t.Errorf("Violation = %#v, want nil when the field is absent", rule.Violation)
+	}
+}
+
+func TestViolationFails(t *testing.T) {
+	v := &Violation{
+		If:     map[string]float64{"useless": 0.5},
+		Unless: map[string]float64{"useful": 0.7},
+	}
+	tests := map[string]struct {
+		probability map[string]float64
+		fail        bool
+		reason      string
+	}{
+		"above the threshold":              {map[string]float64{"useless": 0.6}, true, "useless 0.6 > 0.5"},
+		"at the threshold":                 {map[string]float64{"useless": 0.5}, false, "no if result above its threshold"},
+		"below the threshold":              {map[string]float64{"useless": 0.2}, false, "no if result above its threshold"},
+		"unless cancels":                   {map[string]float64{"useless": 0.6, "useful": 0.8}, false, "unless useful 0.8 > 0.7"},
+		"unless at the threshold is inert": {map[string]float64{"useless": 0.6, "useful": 0.7}, true, "useless 0.6 > 0.5"},
+		"missing result counts as zero":    {map[string]float64{}, false, "no if result above its threshold"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			fail, reason := v.Fails(tt.probability)
+			if fail != tt.fail {
+				t.Errorf("Fails() = %v, want %v", fail, tt.fail)
+			}
+			if reason != tt.reason {
+				t.Errorf("reason = %q, want %q", reason, tt.reason)
+			}
+		})
+	}
+}
+
+func TestViolationFailsAnyTrigger(t *testing.T) {
+	v := &Violation{If: map[string]float64{"alpha": 0.5, "beta": 0.7}}
+
+	// Either entry alone is enough to fail, not only the one named first.
+	if fail, _ := v.Fails(map[string]float64{"beta": 0.8}); !fail {
+		t.Error("Fails() = false for beta above its threshold, want true")
+	}
+	// The reason names the first firing entry in name order, so it is stable.
+	fail, reason := v.Fails(map[string]float64{"beta": 0.8, "alpha": 0.6})
+	if !fail || reason != "alpha 0.6 > 0.5" {
+		t.Errorf("Fails() = %v, %q; want true, %q", fail, reason, "alpha 0.6 > 0.5")
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := map[string]string{
-		"not a mapping":            "---\nnot a key value line\n---\nbody\n",
-		"no frontmatter":           "Just a rule body.\n",
-		"unterminated":             "---\ntype: noul\nappliesTo: \"*.go\"\nno closing delimiter\n",
-		"missing type":             "---\nappliesTo: \"*.go\"\n---\nbody\n",
-		"unknown type":             "---\ntype: nope\n---\nbody\n",
-		"choice no criteria":       "---\ntype: choice\n---\nbody\n",
-		"score no criteria":        "---\ntype: score\n---\nbody\n",
-		"minConfidence above one":  "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: 1.5\n---\nbody\n",
-		"minConfidence below zero": "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: -0.1\n---\nbody\n",
-		"minConfidence on choice":  "---\ntype: choice\ncriteria:\n  a: \"one\"\nminConfidence: 0.8\n---\nbody\n",
-		"bad appliesTo glob":       "---\ntype: noul\nappliesTo: \"[\"\n---\nbody\n",
+		"not a mapping":             "---\nnot a key value line\n---\nbody\n",
+		"no frontmatter":            "Just a rule body.\n",
+		"unterminated":              "---\ntype: noul\nappliesTo: \"*.go\"\nno closing delimiter\n",
+		"missing type":              "---\nappliesTo: \"*.go\"\n---\nbody\n",
+		"unknown type":              "---\ntype: nope\n---\nbody\n",
+		"choice no criteria":        "---\ntype: choice\n---\nbody\n",
+		"score no criteria":         "---\ntype: score\n---\nbody\n",
+		"minConfidence above one":   "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: 1.5\n---\nbody\n",
+		"minConfidence below zero":  "---\ntype: noul\nappliesTo: \"*.go\"\nminConfidence: -0.1\n---\nbody\n",
+		"minConfidence on choice":   "---\ntype: choice\ncriteria:\n  a: \"one\"\nminConfidence: 0.8\n---\nbody\n",
+		"violation on noul":         "---\ntype: noul\nviolation:\n  if:\n    fail: 0.5\n---\nbody\n",
+		"violation without if":      "---\ntype: choice\ncriteria:\n  a: \"one\"\nviolation:\n  unless:\n    a: 0.5\n---\nbody\n",
+		"violation unknown result":  "---\ntype: choice\ncriteria:\n  a: \"one\"\nviolation:\n  if:\n    b: 0.5\n---\nbody\n",
+		"violation misspelled key":  "---\ntype: choice\ncriteria:\n  a: \"one\"\nviolation:\n  iff:\n    a: 0.5\n---\nbody\n",
+		"violation above one":       "---\ntype: choice\ncriteria:\n  a: \"one\"\nviolation:\n  if:\n    a: 1.5\n---\nbody\n",
+		"violation below zero":      "---\ntype: choice\ncriteria:\n  a: \"one\"\nviolation:\n  if:\n    a: -0.1\n---\nbody\n",
+		"violation duplicate level": "---\ntype: score\ncriteria:\n  - \"Easy\"\n  - \"Easy\"\nviolation:\n  if:\n    Easy: 0.5\n---\nbody\n",
+		"bad appliesTo glob":        "---\ntype: noul\nappliesTo: \"[\"\n---\nbody\n",
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {

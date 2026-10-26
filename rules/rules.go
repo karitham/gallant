@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -43,9 +45,68 @@ type Rule struct {
 	// reported as failed. It applies to noul rules only; choice and score rules
 	// leave it zero. A noul that declares none defaults to 0.5.
 	MinConfidence float64
+	// Violation is the condition under which a choice or score rule is reported
+	// as failed. It is nil when the rule declares none, and always nil for a
+	// noul, which states its threshold with MinConfidence instead.
+	Violation *Violation
 	// Body is everything following the frontmatter, preserved verbatim. It is
 	// the rule text the model is asked about.
 	Body string
+}
+
+// Violation declares when a choice or score rule is reported as failed. If
+// lists the results that make a violation and Unless the results that cancel
+// one. An entry fires when the model gives its result a probability strictly
+// above the entry's threshold.
+//
+// The rule fails when some If entry fires and no Unless entry does. Because the
+// outcomes of one decision sum to one, a violation is usually a single result or
+// a few unlikely ones, and an Unless entry is only reachable when it names a
+// result that If does not.
+type Violation struct {
+	If     map[string]float64 `yaml:"if"`
+	Unless map[string]float64 `yaml:"unless"`
+}
+
+// Fails reports whether probability violates the rule, and why. Results missing
+// from probability count as zero. When several entries fire, the reason names
+// the first in name order so a run is reproducible.
+func (v *Violation) Fails(probability map[string]float64) (bool, string) {
+	trigger, p, threshold, ok := firstAbove(v.If, probability)
+	if !ok {
+		return false, "no if result above its threshold"
+	}
+	if name, q, limit, ok := firstAbove(v.Unless, probability); ok {
+		return false, fmt.Sprintf("unless %s %s > %s", name, probabilityText(q), probabilityText(limit))
+	}
+	return true, fmt.Sprintf("%s %s > %s", trigger, probabilityText(p), probabilityText(threshold))
+}
+
+// firstAbove returns the first entry in name order whose result exceeds its
+// threshold.
+func firstAbove(clauses, probability map[string]float64) (name string, p, threshold float64, ok bool) {
+	for _, name := range sortedKeys(clauses) {
+		if probability[name] > clauses[name] {
+			return name, probability[name], clauses[name], true
+		}
+	}
+	return "", 0, 0, false
+}
+
+// sortedKeys returns the keys of m in lexical order.
+func sortedKeys(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// probabilityText renders a probability without trailing zeros, so a reason
+// reads "useless 0.95 > 0.5" and stays unambiguous at the threshold.
+func probabilityText(p float64) string {
+	return strconv.FormatFloat(p, 'g', 4, 64)
 }
 
 // Parse parses a single rule from raw markdown file contents.
@@ -63,6 +124,7 @@ func Parse(data []byte) (Rule, error) {
 		AppliesTo     globList        `yaml:"appliesTo"`
 		Type          Type            `yaml:"type"`
 		Criteria      yaml.RawMessage `yaml:"criteria"`
+		Violation     yaml.RawMessage `yaml:"violation"`
 		MinConfidence *float64        `yaml:"minConfidence"`
 	}
 	if err := yaml.Unmarshal([]byte(fm), &cfg); err != nil {
@@ -112,6 +174,53 @@ func Parse(data []byte) (Rule, error) {
 		}
 	}
 
+	// A violation condition names the results it decides on, so it is checked
+	// against the criteria that type has just established. It is decoded
+	// strictly because a misspelled key would otherwise silently never fire.
+	var violation *Violation
+	if len(cfg.Violation) > 0 {
+		if cfg.Type == TypeNoul {
+			return Rule{}, errors.New("violation is only supported for type choice or score; use minConfidence for a noul")
+		}
+		violation = &Violation{}
+		if err := yaml.UnmarshalWithOptions(cfg.Violation, violation, yaml.DisallowUnknownField()); err != nil {
+			return Rule{}, fmt.Errorf("violation: %w", err)
+		}
+		if len(violation.If) == 0 {
+			return Rule{}, errors.New("violation requires at least one result under if")
+		}
+
+		// Results are addressed by name, so a score's levels must be distinct.
+		known := make(map[string]bool, len(criteria.Options)+len(criteria.Levels))
+		for name := range criteria.Options {
+			known[name] = true
+		}
+		for _, level := range criteria.Levels {
+			if known[level] {
+				return Rule{}, fmt.Errorf("violation requires unique criteria levels, but %q repeats", level)
+			}
+			known[level] = true
+		}
+
+		for _, clause := range []struct {
+			name       string
+			thresholds map[string]float64
+		}{
+			{"if", violation.If},
+			{"unless", violation.Unless},
+		} {
+			for _, name := range sortedKeys(clause.thresholds) {
+				threshold := clause.thresholds[name]
+				if !known[name] {
+					return Rule{}, fmt.Errorf("violation.%s names unknown result %q", clause.name, name)
+				}
+				if threshold < 0 || threshold > 1 {
+					return Rule{}, fmt.Errorf("violation.%s threshold for %q must be between 0 and 1, got %v", clause.name, name, threshold)
+				}
+			}
+		}
+	}
+
 	// A malformed glob would silently never match, so reject it here where the
 	// file can be named rather than leaving a rule that does nothing.
 	for _, glob := range cfg.AppliesTo {
@@ -125,6 +234,7 @@ func Parse(data []byte) (Rule, error) {
 		Type:          cfg.Type,
 		Criteria:      criteria,
 		MinConfidence: minConfidence,
+		Violation:     violation,
 		Body:          body,
 	}, nil
 }

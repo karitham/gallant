@@ -34,6 +34,20 @@ Frontmatter fields:
   criteria       For choice, a mapping of option to description. For score, an
                  ordered list of levels, from low to high.
 
+  violation      For choice and score only. When the rule reports a failure:
+
+                   violation:
+                     if:            # any one of these fires a violation
+                       useless: 0.5
+                     unless:        # any one of these cancels it
+                       useful: 0.7
+
+                 Each entry names an option or level and the probability above
+                 which it fires. The rule fails when some if entry fires and no
+                 unless entry does. A passing rule is hidden unless
+                 --include-passing is given. A noul states its threshold with
+                 minConfidence instead, so it cannot declare a violation.
+
   minConfidence  For noul only. The probability of a violation above which the
                  rule fails, from 0 to 1 (default 0.5).
 
@@ -64,6 +78,9 @@ Examples:
       useful: "The comments explain intent or rationale."
       mixed: "Some comments add value, others repeat the code."
       useless: "The comments mostly restate the code."
+    violation:
+      if:
+        useless: 0.5
     ---
     Classify the comments in this file.
 
@@ -76,5 +93,8 @@ Examples:
       - "Easy to read"
       - "Somewhat hard"
       - "Very hard"
+    violation:
+      if:
+        "Very hard": 0.5
     ---
     Rate how hard this document is to read.

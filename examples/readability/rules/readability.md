@@ -5,6 +5,10 @@ criteria:
   - "Easy to read"
   - "Somewhat hard to read"
   - "Very hard to read"
+violation:
+  if:
+    "Somewhat hard to read": 0.5
+    "Very hard to read": 0.5
 ---
 # Readability
 

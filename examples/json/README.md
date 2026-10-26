@@ -1,6 +1,6 @@
 # JSON output
 
-Emits findings as a JSON array for tools to consume.
+Emits one JSON object per finding for tools to consume.
 
 ![demo](.vhs/demo.gif)
 
@@ -15,11 +15,13 @@ gallant --provider opencode --model jev-1.13-free --json \
   --rules examples/json/rules examples/json/sample.go
 ```
 
-Each result is an object with `file`, `rule`, `type`, `result`, and
-`confidence`. Confidence is the probability of that result. Every outcome the
-model weighed is emitted: fail and pass for a noul, every option for a choice,
-every level for a score. Without `--json`, gallant prints the same results as
-lines; see the [multiple files example](../multiple).
+Each object has `file`, `rule`, `type`, and `results`. Every outcome the model
+weighed is listed in `results`, each with a `result` name and a `confidence`,
+the probability of that result: fail and pass for a noul, every option for a
+choice, every level for a score. A rule that declares a violation condition
+also carries `verdict` (`fail` or `pass`) and `reason`, the clause that decided
+it. Without `--json`, gallant prints the same findings as lines; see the
+[multiple files example](../multiple).
 
 The file is evaluated by a model, so the API key is required.
 

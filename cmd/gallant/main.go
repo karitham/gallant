@@ -134,11 +134,13 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 		fmt.Fprintln(os.Stderr, "gallant: no rules found; nothing will be checked")
 	}
 
-	// minConfidence is indexed by rule path so a finding can recover the
-	// threshold its rule declared.
+	// minConfidence and violation are indexed by rule path so a finding can
+	// recover the decision its rule declared.
 	minConfidence := make(map[string]float64, len(loaded))
+	violation := make(map[string]*rules.Violation, len(loaded))
 	for _, r := range loaded {
 		minConfidence[r.Path] = r.MinConfidence
+		violation[r.Path] = r.Violation
 	}
 
 	match := func(name string) bool {
@@ -185,6 +187,24 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 			continue
 		}
 		for _, finding := range res.findings {
+			// A rule that declares a violation condition reports a verdict rather
+			// than asking the reader to compare probabilities. A passing verdict is
+			// hidden unless passing findings are asked for, like a passing noul.
+			var verdict, reason string
+			if v := violation[finding.Rule]; v != nil {
+				probability := make(map[string]float64, len(finding.Outcomes))
+				for _, outcome := range finding.Outcomes {
+					probability[outcome.Result] = outcome.Confidence
+				}
+				violated, why := v.Fails(probability)
+				if !violated && !includePassing {
+					continue
+				}
+				verdict, reason = "pass", why
+				if violated {
+					verdict = "fail"
+				}
+			}
 			// A noul is reported only when its probability of a violation clears
 			// the rule's threshold, or when passing findings are asked for. Once
 			// reported, every outcome is emitted, as for any other type.
@@ -197,15 +217,14 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 					continue
 				}
 			}
-			for _, outcome := range finding.Outcomes {
-				records = append(records, record{
-					File:       inputs[i].name,
-					Rule:       finding.Rule,
-					Type:       finding.Type,
-					Result:     outcome.Result,
-					Confidence: outcome.Confidence,
-				})
-			}
+			records = append(records, record{
+				File:    inputs[i].name,
+				Rule:    finding.Rule,
+				Type:    finding.Type,
+				Verdict: verdict,
+				Reason:  reason,
+				Results: finding.Outcomes,
+			})
 		}
 	}
 	for _, msg := range providerOrder {
@@ -219,15 +238,23 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		// A reason carries "<" and ">" for its threshold, which the encoder would
+		// otherwise escape; findings are not HTML, so leave them readable.
+		enc.SetEscapeHTML(false)
 		if err := enc.Encode(records); err != nil {
 			return err
 		}
 	} else {
 		for _, r := range records {
-			// The result is the only free-text field, so it is the only one that
-			// can contain a newline or tab and need escaping.
-			result := strconv.Quote(r.Result)
-			fmt.Printf("%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, r.Confidence*100, result[1:len(result)-1])
+			if r.Verdict != "" {
+				fmt.Printf("%s %s %s %s (%s)\n", r.File, r.Rule, r.Type, r.Verdict, r.Reason)
+			}
+			for _, o := range r.Results {
+				// The result is the only free-text field, so it is the only one that
+				// can contain a newline or tab and need escaping.
+				result := strconv.Quote(o.Result)
+				fmt.Printf("%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, o.Confidence*100, result[1:len(result)-1])
+			}
 		}
 	}
 
@@ -248,16 +275,19 @@ func outcome(outcomes []eval.Outcome, result string) eval.Outcome {
 	return eval.Outcome{Result: result}
 }
 
-// record is one outcome of one finding as it is emitted. Confidence is the
-// probability of Result, the same meaning for every rule type. A finding emits
-// one record per outcome: both fail and pass for a noul, every option for a
-// choice, and every level for a score, most likely first.
+// record is one finding as it is emitted. Results holds every outcome the model
+// weighed, most likely first, and Confidence is the probability of that result,
+// the same meaning for every rule type. Verdict is set when the rule declares a
+// violation condition: "fail" when it is met and "pass" when it is not, with
+// Reason naming the clause that decided it. Without a violation condition the
+// reader compares the probabilities itself and Verdict stays empty.
 type record struct {
-	File       string     `json:"file"`
-	Rule       string     `json:"rule"`
-	Type       rules.Type `json:"type"`
-	Result     string     `json:"result"`
-	Confidence float64    `json:"confidence"`
+	File    string         `json:"file"`
+	Rule    string         `json:"rule"`
+	Type    rules.Type     `json:"type"`
+	Verdict string         `json:"verdict,omitempty"`
+	Reason  string         `json:"reason,omitempty"`
+	Results []eval.Outcome `json:"results"`
 }
 
 // result is one input's evaluation: its findings, or the error that stopped it.

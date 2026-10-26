@@ -12,8 +12,8 @@ import (
 // it. Confidence means the same thing for every rule type: the probability that
 // this result is the answer.
 type Outcome struct {
-	Result     string
-	Confidence float64
+	Result     string  `json:"result"`
+	Confidence float64 `json:"confidence"`
 }
 
 // Finding is one rule's answer for an input: every result the model weighed,

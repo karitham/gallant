@@ -58,6 +58,7 @@ func renderRules(rules []Rule) string {
 		fmt.Fprintf(&b, "appliesTo: %s\n", formatGlobs(r.AppliesTo))
 		fmt.Fprintf(&b, "type: %s\n", r.Type)
 		fmt.Fprintf(&b, "criteria: %s\n", formatCriteria(r.Criteria))
+		fmt.Fprintf(&b, "violation: %s\n", formatViolation(r.Violation))
 		fmt.Fprintf(&b, "minConfidence: %g\n", r.MinConfidence)
 		fmt.Fprintf(&b, "body: %s\n", strconv.Quote(r.Body))
 	}
@@ -70,6 +71,22 @@ func formatGlobs(globs []string) string {
 		quoted[i] = strconv.Quote(g)
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+func formatViolation(v *Violation) string {
+	if v == nil {
+		return "none"
+	}
+	return "if " + formatThresholds(v.If) + " unless " + formatThresholds(v.Unless)
+}
+
+func formatThresholds(thresholds map[string]float64) string {
+	keys := sortedKeys(thresholds)
+	parts := make([]string, len(keys))
+	for i, key := range keys {
+		parts[i] = fmt.Sprintf("%s: %g", key, thresholds[key])
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 func formatCriteria(c Criteria) string {
