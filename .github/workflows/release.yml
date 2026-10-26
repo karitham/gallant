@@ -1,7 +1,8 @@
 name: Release
 
 on:
-  # Release on every push to main, and whenever a semver tag is pushed.
+  # Test on every push to main. A release is created only when a semver tag is
+  # pushed, so a branch push cannot mint a version of its own.
   push:
     branches:
       - main
@@ -48,10 +49,10 @@ jobs:
       - name: Test
         run: go test ./...
 
-      # Compute and tag only when we need to mint a new version: a push to a
-      # branch (main), or a manual dispatch. A tag push is already versioned.
+      # Compute and tag only for a manual dispatch. A tag push is already
+      # versioned and a branch push must not mint one.
       - name: Compute next version
-        if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         id: version
         env:
           BUMP: ${{ inputs.bump }}
@@ -80,7 +81,7 @@ jobs:
           echo "Releasing $next (previous: $latest, bump: $bump)"
 
       - name: Create and push tag
-        if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           NEXT: ${{ steps.version.outputs.next }}
         run: |
@@ -93,6 +94,7 @@ jobs:
           git checkout "$NEXT"
 
       - name: Run GoReleaser
+        if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
