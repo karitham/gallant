@@ -58,6 +58,18 @@ func TestEvaluate(t *testing.T) {
 			},
 		},
 		{
+			// A server may report a probability with binary noise, which must not
+			// reach the output as 0.9400000000000001.
+			name: "noisy probabilities are rounded",
+			rules: []rules.Rule{
+				{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},
+			},
+			reply: `{"answers":{"q0":{"type":"choice","choice":"violation","confidence":0.9400000000000001,"probabilities":{"compliant":0.06000000000000005,"violation":0.9400000000000001}}}}`,
+			want: []eval.Finding{
+				{Rule: "s.md", Type: rules.TypeChoice, Outcomes: []eval.Outcome{{Result: "violation", Confidence: 0.94}, {Result: "compliant", Confidence: 0.06}}},
+			},
+		},
+		{
 			name: "answers without probabilities fall back to the chosen value",
 			rules: []rules.Rule{
 				{Path: "s.md", Type: rules.TypeChoice, Criteria: rules.Criteria{Options: map[string]string{"compliant": "ok", "violation": "bad"}}},

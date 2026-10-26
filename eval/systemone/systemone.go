@@ -121,15 +121,16 @@ func finding(r rules.Rule, a answer) eval.Finding {
 		outcomes = scoreOutcomes(r, a)
 	default:
 		outcomes = []eval.Outcome{
-			{Result: "fail", Confidence: a.Noul},
+			{Result: "fail", Confidence: roundProbability(a.Noul)},
 			{Result: "pass", Confidence: roundProbability(1 - a.Noul)},
 		}
 	}
 	return eval.Finding{Rule: r.Path, Type: r.Type, Outcomes: outcomes}
 }
 
-// roundProbability trims binary floating-point noise from a derived probability,
-// so a noul's complement (1 - 0.9) reads as 0.1 rather than 0.09999999999999998.
+// roundProbability trims binary floating-point noise from a reported or derived
+// probability, so a noul's complement (1 - 0.9) reads as 0.1 rather than
+// 0.09999999999999998, and a server's 0.9400000000000001 reads as 0.94.
 func roundProbability(p float64) float64 {
 	return math.Round(p*1e4) / 1e4
 }
@@ -138,7 +139,7 @@ func roundProbability(p float64) float64 {
 // probabilities keep the options' alphabetical order so a run is reproducible.
 func choiceOutcomes(a answer) []eval.Outcome {
 	if len(a.Probabilities) == 0 {
-		return []eval.Outcome{{Result: a.Choice, Confidence: a.Confidence}}
+		return []eval.Outcome{{Result: a.Choice, Confidence: roundProbability(a.Confidence)}}
 	}
 	options := make([]string, 0, len(a.Probabilities))
 	for option := range a.Probabilities {
@@ -147,7 +148,7 @@ func choiceOutcomes(a answer) []eval.Outcome {
 	slices.Sort(options)
 	out := make([]eval.Outcome, len(options))
 	for i, option := range options {
-		out[i] = eval.Outcome{Result: option, Confidence: a.Probabilities[option]}
+		out[i] = eval.Outcome{Result: option, Confidence: roundProbability(a.Probabilities[option])}
 	}
 	sortByLikelihood(out)
 	return out
@@ -158,7 +159,7 @@ func choiceOutcomes(a answer) []eval.Outcome {
 // the distribution stays complete.
 func scoreOutcomes(r rules.Rule, a answer) []eval.Outcome {
 	if len(a.Probabilities) == 0 {
-		return []eval.Outcome{{Result: scoreLabel(r, int(a.Score)), Confidence: a.Confidence}}
+		return []eval.Outcome{{Result: scoreLabel(r, int(a.Score)), Confidence: roundProbability(a.Confidence)}}
 	}
 	levels := make([]string, 0, len(a.Probabilities))
 	for level := range a.Probabilities {
@@ -171,7 +172,7 @@ func scoreOutcomes(r rules.Rule, a answer) []eval.Outcome {
 		if n, err := strconv.Atoi(level); err == nil {
 			label = scoreLabel(r, n)
 		}
-		out[i] = eval.Outcome{Result: label, Confidence: a.Probabilities[level]}
+		out[i] = eval.Outcome{Result: label, Confidence: roundProbability(a.Probabilities[level])}
 	}
 	sortByLikelihood(out)
 	return out
