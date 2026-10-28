@@ -29,6 +29,10 @@ const (
 	TypeScore  Type = "score"
 )
 
+// DefaultMinConfidence is the probability of a violation above which a noul is
+// reported as failed when its rule declares none.
+const DefaultMinConfidence = 0.5
+
 // Rule is a single lint rule loaded from a markdown file.
 type Rule struct {
 	// Path is the rule's path within the filesystem it was loaded from. It is
@@ -43,7 +47,7 @@ type Rule struct {
 	Criteria Criteria
 	// MinConfidence is the probability of a violation above which a noul is
 	// reported as failed. It applies to noul rules only; choice and score rules
-	// leave it zero. A noul that declares none defaults to 0.5.
+	// leave it zero. A noul that declares none defaults to DefaultMinConfidence.
 	MinConfidence float64
 	// Violation is the condition under which a choice or score rule is reported
 	// as failed. It is nil when the rule declares none, and always nil for a
@@ -162,7 +166,7 @@ func Parse(data []byte) (Rule, error) {
 	// different confidence and have no such midpoint, so they reject the field.
 	minConfidence := 0.0
 	if cfg.Type == TypeNoul {
-		minConfidence = 0.5
+		minConfidence = DefaultMinConfidence
 	}
 	if cfg.MinConfidence != nil {
 		if cfg.Type != TypeNoul {

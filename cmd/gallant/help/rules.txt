@@ -1,8 +1,8 @@
 Rule format
 
   A rule is a markdown file. Put rules in .agents/gallant, or in the directory
-  given with --rules. gallant reads rules in subdirectories and ignores hidden
-  files.
+  named by --rules or GALLANT_RULES. gallant reads rules in subdirectories and
+  ignores hidden files.
 
   A rule has optional frontmatter between two "---" lines, then the rule text:
 

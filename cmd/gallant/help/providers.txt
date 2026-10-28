@@ -1,7 +1,9 @@
 Providers
 
-  Choose a provider with --provider and a model with --model. The default
-  provider is opencode, and its default model is used when --model is omitted.
+  Choose a provider with --provider and a model with --model. Set
+  GALLANT_PROVIDER and GALLANT_MODEL to change the defaults; the flags override
+  them. The built-in default provider is opencode, and its default model is used
+  when neither --model nor GALLANT_MODEL names one.
 
   opencode
 

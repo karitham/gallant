@@ -34,18 +34,231 @@ const defaultRulesDir = ".agents/gallant"
 // is dominated by network round trips, so this exceeds the CPU count.
 const defaultJobs = 8
 
-// defaultMinConfidence is the probability of a violation above which a noul is
-// reported as failed when its rule declares none. It is the same default rules
-// applies, used when a finding names a rule that was not loaded.
-const defaultMinConfidence = 0.5
+// defaultProvider is the provider used when neither --provider nor
+// GALLANT_PROVIDER names one.
+const defaultProvider = "opencode"
+
+// Environment variables that supply defaults a flag can override.
+const (
+	envProvider = "GALLANT_PROVIDER"
+	envModel    = "GALLANT_MODEL"
+	envRules    = "GALLANT_RULES"
+)
 
 func main() {
-	flag.Usage = func() { printUsage(os.Stderr) }
-
-	// An explicit help request prints to standard output and exits 0, unlike
-	// the standard flag package, which exits 2. A topic prints that section of
-	// the documentation instead of the overview.
+	s := streams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 	args := os.Args[1:]
+	if printDocRequest(args, s.stdout) {
+		return
+	}
+
+	cfg, err := resolveConfig(args, os.Getenv)
+	if err != nil {
+		exitWith(err, s.stderr)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	m, err := newModel(ctx, cfg.model, os.Getenv, s.stderr)
+	if err != nil {
+		exitWith(err, s.stderr)
+	}
+
+	if err := checkRulesDir(cfg.rulesDir); err != nil {
+		exitWith(err, s.stderr)
+	}
+
+	if err := run(ctx, os.DirFS(cfg.rulesDir), cfg.run, m, s); err != nil {
+		exitWith(err, s.stderr)
+	}
+}
+
+// config is one invocation after flags, environment defaults, and built-in
+// defaults are resolved. Its model names a registered provider and a model
+// scoped to it.
+type config struct {
+	model    modelSpec
+	rulesDir string
+	run      runOptions
+}
+
+// modelSpec is the model a run uses: a registered provider and a model name
+// scoped to it. resolveModel is its only constructor.
+type modelSpec struct {
+	provider eval.Provider
+	name     string
+}
+
+// runOptions are the settings a lint pass consumes: how to obtain its inputs and
+// how to report them. They travel together and carry no provider or
+// configuration knowledge.
+type runOptions struct {
+	read inputReader
+	// jobs is at least 1; resolveConfig rejects smaller values.
+	jobs           int
+	includePassing bool
+	asJSON         bool
+}
+
+// streams are the process streams a run reads and writes. They are injected
+// rather than read from the process so run has no global state.
+type streams struct {
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+}
+
+// flagError is a command line the flag parser rejected. main prints the usage
+// text with it, unlike invalidCommand, which the parser accepted but the
+// command cannot act on.
+type flagError struct{ err error }
+
+func (e flagError) Error() string { return e.err.Error() }
+func (e flagError) Unwrap() error { return e.err }
+
+// invalidCommand is a parsed command line gallant cannot act on: an unknown
+// provider or model, conflicting input modes, or a jobs count below one. main
+// reports it without the usage text.
+type invalidCommand struct{ err error }
+
+func (e invalidCommand) Error() string { return e.err.Error() }
+func (e invalidCommand) Unwrap() error { return e.err }
+
+// disposition is how main reports an error: the exit status, the line for
+// standard error (empty for none), and whether to print the usage text.
+type disposition struct {
+	code    int
+	message string
+	usage   bool
+}
+
+// resolveConfig parses args and gives each setting the highest-precedence value
+// available: an explicit flag, then its environment default, then the built-in
+// default. getenv is injected so the precedence is testable without mutating the
+// process environment. Every rejection is tagged with the error kind main uses
+// to choose its exit status.
+func resolveConfig(args []string, getenv func(string) string) (config, error) {
+	flags := flag.NewFlagSet("gallant", flag.ContinueOnError)
+	// main owns the diagnostics and the exit status, so the parser writes
+	// neither and only reports the error.
+	flags.SetOutput(io.Discard)
+	flags.Usage = func() {}
+
+	// Each flag declares the environment value as its default, so the flag
+	// package's own precedence carries the rule: an explicit flag, then the
+	// environment, then the built-in default. An empty environment value falls
+	// through to the built-in default.
+	provider := flags.String("provider", envOr(getenv, envProvider, defaultProvider), "model provider ("+strings.Join(eval.Names(), ", ")+")")
+	model := flags.String("model", envOr(getenv, envModel, ""), "model name")
+	rulesDir := flags.String("rules", envOr(getenv, envRules, defaultRulesDir), "directory of lint rules, relative to the current working directory")
+	jobs := flags.Int("jobs", defaultJobs, "maximum number of files to evaluate concurrently")
+	includePassing := flags.Bool("include-passing", false, "also show rules the file passes")
+	asJSON := flags.Bool("json", false, "emit findings as JSON")
+	diff := flags.Bool("diff", false, "lint a unified diff read from stdin")
+	assumeFilename := flags.String("assume-filename", "", "lint a single file read from stdin under this name")
+	if err := flags.Parse(args); err != nil {
+		return config{}, flagError{err}
+	}
+
+	if *jobs < 1 {
+		return config{}, invalidCommand{fmt.Errorf("--jobs must be at least 1, got %d", *jobs)}
+	}
+
+	read, err := parseInputSource(flags.Args(), *diff, *assumeFilename)
+	if err != nil {
+		if errors.Is(err, errNoInput) {
+			// The bare invocation prints usage alone; wrapping it in
+			// invalidCommand would add a message.
+			return config{}, err
+		}
+		return config{}, invalidCommand{err}
+	}
+
+	p, ok := eval.Lookup(*provider)
+	if !ok {
+		return config{}, invalidCommand{fmt.Errorf("unknown provider %q (want one of: %s)", *provider, strings.Join(eval.Names(), ", "))}
+	}
+	spec, err := resolveModel(p, *model)
+	if err != nil {
+		return config{}, err
+	}
+
+	cfg := config{
+		model:    spec,
+		rulesDir: *rulesDir,
+		run: runOptions{
+			read:           read,
+			jobs:           *jobs,
+			includePassing: *includePassing,
+			asJSON:         *asJSON,
+		},
+	}
+	return cfg, nil
+}
+
+// resolveModel applies the provider's default when model names none and checks
+// the result against the set the provider declares. A provider that declares no
+// models discovers them at construction, so its names are checked by newModel.
+func resolveModel(p eval.Provider, model string) (modelSpec, error) {
+	if model == "" {
+		model = p.Default
+	}
+	if model == "" {
+		return modelSpec{}, invalidCommand{fmt.Errorf("provider %s declares no default model; pass --model", p.Name)}
+	}
+	if len(p.Models) > 0 && !slices.Contains(p.Models, model) {
+		return modelSpec{}, unknownModel(p.Name, model, p.Models)
+	}
+	return modelSpec{provider: p, name: model}, nil
+}
+
+// unknownModel is the diagnostic for a model name absent from the set the
+// provider declares or discovers.
+func unknownModel(provider, model string, known []string) error {
+	return invalidCommand{fmt.Errorf("unknown model %q for %s (want one of: %s)", model, provider, strings.Join(known, ", "))}
+}
+
+// envOr returns the environment value named name, or def when the variable is
+// unset or set to the empty string.
+func envOr(getenv func(string) string, name, def string) string {
+	if value := getenv(name); value != "" {
+		return value
+	}
+	return def
+}
+
+// newModel constructs the selected model and, when the provider declares no
+// models of its own, checks the name against the set the provider discovers.
+// Discovery failure is not fatal: the name is passed through and the server
+// reports per-file problems, with a warning to warn. Construction precedes
+// discovery because the lister is the constructed model, and it also reports a
+// missing API key first.
+func newModel(ctx context.Context, spec modelSpec, getenv func(string) string, warn io.Writer) (eval.Model, error) {
+	p := spec.provider
+	m, err := p.New(getenv(p.KeyEnvVar), getenv(p.URLEnvVar), spec.name)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(p.Models) == 0 {
+		if lister, ok := m.(eval.Lister); ok {
+			names, err := lister.List(ctx)
+			switch {
+			case err != nil:
+				fmt.Fprintf(warn, "gallant: %s: cannot list models: %v; using model %q\n", p.Name, err, spec.name)
+			case len(names) > 0 && !slices.Contains(names, spec.name):
+				return nil, unknownModel(p.Name, spec.name, names)
+			}
+		}
+	}
+	return m, nil
+}
+
+// printDocRequest writes the documentation an argument asks for and reports
+// whether it did. It runs before flag parsing because an explicit help request
+// prints to standard output and exits 0, unlike the flag package's own help.
+func printDocRequest(args []string, w io.Writer) bool {
 	for i, arg := range args {
 		switch arg {
 		case "-h", "-help", "--help":
@@ -55,84 +268,28 @@ func main() {
 			}
 			switch topic {
 			case "rules":
-				printRulesHelp(os.Stdout)
+				printRulesHelp(w)
 			case "providers":
-				printProvidersHelp(os.Stdout)
+				printProvidersHelp(w)
 			default:
-				printUsage(os.Stdout)
+				printUsage(w)
 			}
-			return
+			return true
 		case "--man":
-			printMan(os.Stdout)
-			return
+			printMan(w)
+			return true
 		}
 	}
-
-	provider := flag.String("provider", "opencode", "model provider ("+strings.Join(eval.Names(), ", ")+")")
-	model := flag.String("model", "", "model name")
-	rulesDir := flag.String("rules", defaultRulesDir, "directory of lint rules, relative to the current working directory")
-	jobs := flag.Int("jobs", defaultJobs, "maximum number of files to evaluate concurrently")
-	includePassing := flag.Bool("include-passing", false, "also show rules the file passes")
-	asJSON := flag.Bool("json", false, "emit findings as JSON")
-	diff := flag.Bool("diff", false, "lint a unified diff read from stdin")
-	assumeFilename := flag.String("assume-filename", "", "lint a single file read from stdin under this name")
-	flag.Parse()
-
-	if err := validateInputs(*diff, *assumeFilename, flag.Args()); err != nil {
-		if errors.Is(err, errNoInput) {
-			flag.Usage()
-			os.Exit(2)
-		}
-		usageFail(err)
-	}
-
-	p, ok := eval.Lookup(*provider)
-	if !ok {
-		fail(fmt.Errorf("unknown provider %q (want one of: %s)", *provider, strings.Join(eval.Names(), ", ")))
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	if *model == "" {
-		*model = p.Default
-	}
-	m, err := p.New(os.Getenv(p.KeyEnvVar), os.Getenv(p.URLEnvVar), *model)
-	if err != nil {
-		fail(err)
-	}
-
-	// A model may offer a discovery endpoint, in which case the model set is
-	// read at startup rather than declared. When discovery fails the model name
-	// is passed through unchecked and the server reports per-file problems.
-	if lister, ok := m.(eval.Lister); ok {
-		names, err := lister.List(ctx)
-		switch {
-		case err != nil:
-			fmt.Fprintf(os.Stderr, "gallant: %s: cannot list models: %v; using --model %q\n", p.Name, err, *model)
-		case len(names) > 0 && !slices.Contains(names, *model):
-			fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(names, ", ")))
-		}
-	} else if !slices.Contains(p.Models, *model) {
-		fail(fmt.Errorf("unknown model %q for %s (want one of: %s)", *model, p.Name, strings.Join(p.Models, ", ")))
-	}
-
-	if err := checkRulesDir(*rulesDir); err != nil {
-		fail(err)
-	}
-
-	if err := run(ctx, os.DirFS(*rulesDir), flag.Args(), *diff, *assumeFilename, m, *jobs, *includePassing, *asJSON); err != nil {
-		fail(err)
-	}
+	return false
 }
 
-func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFilename string, model eval.Model, jobs int, includePassing, asJSON bool) error {
+func run(ctx context.Context, rulesFS fs.FS, opts runOptions, model eval.Model, s streams) error {
 	loaded, err := rules.Load(rulesFS)
 	if err != nil {
 		return err
 	}
 	if len(loaded) == 0 {
-		fmt.Fprintln(os.Stderr, "gallant: no rules found; nothing will be checked")
+		fmt.Fprintln(s.stderr, "gallant: no rules found; nothing will be checked")
 	}
 
 	// minConfidence and violation are indexed by rule path so a finding can
@@ -148,20 +305,12 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 		return len(applicable(loaded, name)) > 0
 	}
 
-	var inputs []input
-	switch {
-	case diff:
-		inputs, err = diffInputs(os.Stdin, match)
-	case assumeFilename != "":
-		inputs, err = namedInput(assumeFilename, os.Stdin)
-	default:
-		inputs, err = resolveInputs(paths, match)
-	}
+	inputs, err := opts.read(match, s.stdin)
 	if err != nil {
 		return err
 	}
 
-	results, err := evaluateAll(ctx, inputs, loaded, model, jobs)
+	results, err := evaluateAll(ctx, inputs, loaded, model, opts.jobs)
 	if err != nil {
 		return err
 	}
@@ -184,7 +333,7 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 				providerFaults[msg]++
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "gallant: %s: %v\n", inputs[i].name, res.err)
+			fmt.Fprintf(s.stderr, "gallant: %s: %v\n", inputs[i].name, res.err)
 			continue
 		}
 		for _, finding := range res.findings {
@@ -198,7 +347,7 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 					probability[outcome.Result] = outcome.Confidence
 				}
 				violated, why := v.Fails(probability)
-				if !violated && !includePassing {
+				if !violated && !opts.includePassing {
 					continue
 				}
 				verdict, reason = "pass", why
@@ -211,12 +360,14 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 			// the rule's threshold, or when passing findings are asked for. Once
 			// reported, every outcome is emitted, as for any other type.
 			if finding.Type == rules.TypeNoul {
-				min, ok := minConfidence[finding.Rule]
-				if !ok {
-					min = defaultMinConfidence
+				// A model can name a rule that was not loaded, so a missing
+				// entry falls back to the shared default.
+				min := rules.DefaultMinConfidence
+				if declared, ok := minConfidence[finding.Rule]; ok {
+					min = declared
 				}
 				failConfidence := outcome(finding.Outcomes, "fail").Confidence
-				if failConfidence <= min && !includePassing {
+				if failConfidence <= min && !opts.includePassing {
 					continue
 				}
 				if failConfidence > min {
@@ -235,14 +386,14 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	}
 	for _, msg := range providerOrder {
 		if n := providerFaults[msg]; n > 1 {
-			fmt.Fprintf(os.Stderr, "gallant: %s (%d files)\n", msg, n)
+			fmt.Fprintf(s.stderr, "gallant: %s (%d files)\n", msg, n)
 		} else {
-			fmt.Fprintf(os.Stderr, "gallant: %s\n", msg)
+			fmt.Fprintf(s.stderr, "gallant: %s\n", msg)
 		}
 	}
 
-	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+	if opts.asJSON {
+		enc := json.NewEncoder(s.stdout)
 		enc.SetIndent("", "  ")
 		// A reason carries "<" and ">" for its threshold, which the encoder would
 		// otherwise escape; findings are not HTML, so leave them readable.
@@ -253,13 +404,13 @@ func run(ctx context.Context, rulesFS fs.FS, paths []string, diff bool, assumeFi
 	} else {
 		for _, r := range records {
 			if r.Verdict != "" {
-				fmt.Printf("%s %s %s %s (%s)\n", r.File, r.Rule, r.Type, r.Verdict, r.Reason)
+				fmt.Fprintf(s.stdout, "%s %s %s %s (%s)\n", r.File, r.Rule, r.Type, r.Verdict, r.Reason)
 			}
 			for _, o := range r.Results {
 				// The result is the only free-text field, so it is the only one that
 				// can contain a newline or tab and need escaping.
 				result := strconv.Quote(o.Result)
-				fmt.Printf("%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, o.Confidence*100, result[1:len(result)-1])
+				fmt.Fprintf(s.stdout, "%s %s %s %.0f%% %s\n", r.File, r.Rule, r.Type, o.Confidence*100, result[1:len(result)-1])
 			}
 		}
 	}
@@ -312,14 +463,10 @@ type result struct {
 }
 
 // evaluateAll evaluates every input, up to jobs at a time, returning each
-// input's result indexed by its position in inputs. Output is assembled in
-// input order regardless of the order evaluations finish. ctx cancellation stops
-// further dispatch and cancels in-flight work.
+// input's result indexed by its position in inputs. jobs must be at least 1.
+// Output is assembled in input order regardless of the order evaluations finish.
+// ctx cancellation stops further dispatch and cancels in-flight work.
 func evaluateAll(ctx context.Context, inputs []input, all []rules.Rule, model eval.Model, jobs int) ([]result, error) {
-	if jobs < 1 {
-		jobs = 1
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -504,20 +651,53 @@ var errNoInput = errors.New("no input")
 // diff in which no file matched a rule.
 var errNoDiff = errors.New("no diff found on stdin (--diff expects unified diff output)")
 
-// validateInputs rejects flag and operand combinations that name no input or
-// more than one source of input.
-func validateInputs(diff bool, assumeFilename string, args []string) error {
+// inputReader expands a parsed input source into the inputs to evaluate. It is
+// the only thing run knows about the source, so a source that names no input or
+// more than one cannot reach it.
+type inputReader func(match func(string) bool, stdin io.Reader) ([]input, error)
+
+// parseInputSource parses the input flags and operands into the one way this run
+// reads its inputs. Every accepted combination returns a reader; a combination
+// that names no source or more than one is rejected here, so no later stage has
+// to check it.
+func parseInputSource(args []string, diff bool, assumeFilename string) (inputReader, error) {
 	switch {
 	case diff && assumeFilename != "":
-		return errors.New("--diff and --assume-filename are mutually exclusive")
+		return nil, errors.New("--diff and --assume-filename are mutually exclusive")
 	case diff && len(args) > 0:
-		return errors.New("--diff reads a diff from stdin and takes no path operands")
+		return nil, errors.New("--diff reads a diff from stdin and takes no path operands")
 	case assumeFilename != "" && len(args) > 0:
-		return errors.New("--assume-filename reads from stdin and takes no path operands")
+		return nil, errors.New("--assume-filename reads from stdin and takes no path operands")
 	case !diff && assumeFilename == "" && len(args) == 0:
-		return errNoInput
+		return nil, errNoInput
+	case diff:
+		return diffReader(), nil
+	case assumeFilename != "":
+		return namedReader(assumeFilename), nil
+	default:
+		return pathsReader(args), nil
 	}
-	return nil
+}
+
+// pathsReader reads the files and directories named on the command line.
+func pathsReader(paths []string) inputReader {
+	return func(match func(string) bool, _ io.Reader) ([]input, error) {
+		return resolveInputs(paths, match)
+	}
+}
+
+// diffReader reads a unified diff from stdin.
+func diffReader() inputReader {
+	return func(match func(string) bool, stdin io.Reader) ([]input, error) {
+		return diffInputs(stdin, match)
+	}
+}
+
+// namedReader reads one file from stdin under name.
+func namedReader(name string) inputReader {
+	return func(_ func(string) bool, stdin io.Reader) ([]input, error) {
+		return namedInput(name, stdin)
+	}
 }
 
 // checkRulesDir reports a missing, unreadable, or non-directory rules path in
@@ -547,21 +727,37 @@ func unwrapPath(err error) error {
 	return err
 }
 
-// fail reports err on stderr and exits nonzero. Diagnostics never go to stdout,
-// so a consumer reading findings from a pipe sees only findings; an interrupt
-// keeps the shell's conventional 130.
-func fail(err error) {
-	if errors.Is(err, context.Canceled) {
-		fmt.Fprintln(os.Stderr, "gallant: interrupted")
-		os.Exit(130)
+// exitWith reports err on w and exits with its disposition. Diagnostics never
+// go to stdout, so a consumer reading findings from a pipe sees only findings.
+func exitWith(err error, w io.Writer) {
+	d := dispositionOf(err)
+	if d.message != "" {
+		fmt.Fprintln(w, d.message)
 	}
-	fmt.Fprintln(os.Stderr, "gallant:", err)
-	os.Exit(1)
+	if d.usage {
+		printUsage(w)
+	}
+	os.Exit(d.code)
 }
 
-// usageFail reports a command-line misuse on stderr and exits 2, the status a
-// bad invocation conventionally uses.
-func usageFail(err error) {
-	fmt.Fprintln(os.Stderr, "gallant:", err)
-	os.Exit(2)
+// dispositionOf maps an error to how main reports it. The error kind is assigned
+// where the error is found, so this table does not need to know which stage
+// failed: a command line gallant cannot act on exits 2, a failed run exits 1,
+// and an interrupt keeps the shell's conventional 130.
+func dispositionOf(err error) disposition {
+	if errors.Is(err, errNoInput) {
+		return disposition{code: 2, usage: true}
+	}
+	var flagErr flagError
+	if errors.As(err, &flagErr) {
+		return disposition{code: 2, message: "gallant: " + err.Error(), usage: true}
+	}
+	var invalid invalidCommand
+	if errors.As(err, &invalid) {
+		return disposition{code: 2, message: "gallant: " + err.Error()}
+	}
+	if errors.Is(err, context.Canceled) {
+		return disposition{code: 130, message: "gallant: interrupted"}
+	}
+	return disposition{code: 1, message: "gallant: " + err.Error()}
 }
