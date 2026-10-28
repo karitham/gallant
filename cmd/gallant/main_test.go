@@ -282,8 +282,8 @@ func TestRunLintsDiffFromStdin(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, true, "", echoModel{}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, nil, true, "", echoModel{}, 1, false, false); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 
 	got := out()
@@ -442,8 +442,8 @@ func TestRunAssumesFilenameFromStdin(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", echoModel{}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", echoModel{}, 1, false, false); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 	if got := out(); !strings.Contains(got, "a.go comments.md noul 90% fail") {
 		t.Errorf("output = %q, want a finding named a.go", got)
@@ -524,8 +524,8 @@ func TestRunReportsViolationVerdict(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(violationRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.95}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.95}, 1, false, false); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 	got := out()
 	for _, want := range []string{
@@ -579,8 +579,8 @@ func TestRunJSONGroupsResultsByFinding(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(violationRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.95}, 1, false, true); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", predicateModel{0.95}, 1, false, true); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 
 	var got []record
@@ -620,8 +620,8 @@ func TestRunMinConfidenceReportsAtThreshold(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRuleConfident)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.9}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.9}, 1, false, false); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 	got := out()
 	for _, want := range []string{"a.go comments.md noul 90% fail", "a.go comments.md noul 10% pass"} {
@@ -649,8 +649,8 @@ func TestRunDefaultMinConfidenceReportsAboveMidpoint(t *testing.T) {
 	out := stdout(t)
 
 	rulesFS := fstest.MapFS{"comments.md": {Data: []byte(noulRule)}}
-	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.6}, 1, false, false); err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := run(context.Background(), rulesFS, nil, false, "a.go", confidentModel{0.6}, 1, false, false); !errors.Is(err, errChecksFailed) {
+		t.Fatalf("run() error = %v, want errChecksFailed", err)
 	}
 	if got := out(); !strings.Contains(got, "a.go comments.md noul 60% fail") {
 		t.Errorf("output = %q, want a fail: 0.6 is above the default 0.5", got)
