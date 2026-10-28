@@ -227,6 +227,24 @@ Providers
       export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...
       gallant --provider cloudflare --model clef-flash .
 
+  liquid
+
+    Liquid AI's d1 decision models. The hosted API serves d1.1 and d1-ultra.
+    The open LFM3 decision models, d1-2B and d1-Omni-2B, run on llama.cpp
+    (b11960 or later) and answer the same protocol at /v1/systemone.
+
+    Models   d1.1 (default), d1-ultra; d1-2B and d1-Omni-2B on a local server
+    API key  LIQUID_API_KEY (required for the hosted API)
+    Base URL LIQUID_BASE_URL (default https://api.liquid.ai/decisions)
+
+      export LIQUID_API_KEY=liquid_...
+      gallant --provider liquid .
+
+    To evaluate locally without a key, point LIQUID_BASE_URL at the server root:
+
+      llama-server -hf LiquidAI/d1-2B-GGUF:Q8_0 -b 8192 -ub 8192
+      LIQUID_BASE_URL=http://127.0.0.1:8080 gallant --provider liquid --model d1-2B .
+
   ollama
 
     A local Ollama server (0.35.0+). No API key. Models are discovered from the
